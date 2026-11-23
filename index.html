@@ -281,7 +281,7 @@ async function biometric(purpose, params) {
 }
 
 /* ═══════════ Keadaan aplikasi ═══════════ */
-const S = { token: store.get('session', true), me: null, seq: 0, users: null };
+const S = { token: store.get('session', true), me: null, seq: 0, users: null, cfg: { appName: APP_NAME, googleClientId: '' } };
 const regToken = new URLSearchParams(location.search).get('reg');
 const root = $('#root');
 
@@ -311,50 +311,146 @@ function renderUnsupported() {
     <p class="mt-2 text-sm text-slate-500">Browser ini tidak menyokong cap jari / Face ID melalui passkey. Gunakan Chrome (Android) atau Safari (iPhone) terkini, dan pastikan kunci skrin serta biometrik telah ditetapkan.</p></div>`);
 }
 
+/* ═══════════ Google Sign-In (SSO) ═══════════ */
+let gisLoad = null, gisInit = false, gisHandler = null;
+function loadGis() {
+  if (!S.cfg.googleClientId) return Promise.resolve(false);
+  if (!gisLoad) gisLoad = new Promise(res => {
+    const sc = document.createElement('script');
+    sc.src = 'https://accounts.google.com/gsi/client'; sc.async = true;
+    sc.onload = () => res(true); sc.onerror = () => res(false);
+    document.head.appendChild(sc);
+  });
+  return gisLoad;
+}
+/** Papar butang Google dalam elemen `el`. handler(idToken) dipanggil selepas pengguna memilih akaun. */
+async function mountGoogle(el, handler, { oneTap = false, text = 'continue_with' } = {}) {
+  if (!el || !(await loadGis()) || !window.google) return false;
+  gisHandler = handler;
+  if (!gisInit) {
+    google.accounts.id.initialize({ client_id: S.cfg.googleClientId, callback: r => gisHandler && gisHandler(r.credential),
+      auto_select: true, use_fedcm_for_prompt: true, context: 'signin', itp_support: true });
+    gisInit = true;
+  }
+  google.accounts.id.renderButton(el, { theme: 'outline', size: 'large', shape: 'pill', text, logo_alignment: 'center',
+    width: Math.min(Math.max(el.offsetWidth, 240), 400), locale: 'ms' });
+  if (oneTap) google.accounts.id.prompt();   // "Teruskan sebagai …" jika pengguna sudah log masuk Google
+  return true;
+}
+
+/* ═══════════ Log masuk ═══════════ */
 function renderLogin(msg) {
+  const g = !!S.cfg.googleClientId;
   authLayout(`<h2 class="text-lg font-semibold text-slate-900">Log masuk</h2>
-    <p class="mt-1 text-sm text-slate-500">Masukkan Staff ID, kemudian sahkan dengan cap jari.</p>
-    <form id="loginForm" class="mt-6 space-y-4">
-      <div><label class="${C.label}" for="lgId">Staff ID</label>
-        <input id="lgId" class="${C.input} uppercase" autocomplete="username webauthn" autocapitalize="characters" placeholder="S001" required value="${esc(store.get('staffId') || '')}"></div>
-      <button type="submit" class="${C.btn} ${C.primary} w-full py-3">${ico('finger')}Log masuk dengan cap jari</button>
-    </form>${alertBox('lgMsg')}
-        <button type="button" onclick="adminPwLogin()" class="${C.btn} ${C.ghost} mt-3 w-full">${ico('key', 'h-4 w-4')}Log masuk admin dengan kata laluan</button>
-    <p class="mt-6 border-t border-slate-100 pt-5 text-center text-xs text-slate-500">Belum mendaftar? Gunakan link pendaftaran yang dihantar oleh pentadbir ke emel anda.</p>`);
+    <p class="mt-1 text-sm text-slate-500">${g ? 'Pilih akaun Google anda, kemudian sahkan dengan cap jari.' : 'Sahkan identiti anda dengan cap jari atau Face ID.'}</p>
+    <div id="ssoHello" class="mt-5 hidden"></div>
+    ${g ? `<div id="gBtn" class="mt-6 flex min-h-[44px] w-full justify-center"></div>
+      <div class="my-5 flex items-center gap-3 text-xs text-slate-400"><span class="h-px flex-1 bg-slate-200"></span>atau<span class="h-px flex-1 bg-slate-200"></span></div>`
+      : '<div class="mt-6"></div>'}
+    <button id="fpBtn" class="${C.btn} ${g ? C.secondary : C.primary} w-full py-3">${ico('finger')}Log masuk dengan cap jari</button>
+    <p class="mt-2 text-center text-xs text-slate-400">Tak perlu taip apa-apa — pilih akaun anda pada telefon</p>
+    <details class="group mt-5 rounded-xl ring-1 ring-slate-200">
+      <summary class="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-medium text-slate-600">
+        <span class="flex items-center gap-2">${ico('mail', 'h-4 w-4 text-slate-400')}Log masuk dengan emel</span>
+        <span class="text-slate-400 transition group-open:rotate-90">›</span></summary>
+      <form id="emailForm" class="space-y-3 px-4 pb-4">
+        <input id="lgEmail" type="email" class="${C.input}" autocomplete="username webauthn" placeholder="nama@organisasi.gov.my" required value="${esc(store.get('lastEmail') || '')}">
+        <button class="${C.btn} ${C.secondary} w-full">${ico('finger', 'h-4 w-4')}Teruskan dengan cap jari</button>
+      </form></details>
+    ${alertBox('lgMsg')}
+    <div class="mt-6 space-y-3 border-t border-slate-100 pt-5 text-center">
+      <button id="pwBtn" class="inline-flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:text-indigo-500">${ico('key', 'h-4 w-4')}Log masuk admin dengan kata laluan</button>
+      <p class="text-xs text-slate-500">Belum mendaftar? Gunakan link pendaftaran yang dihantar oleh pentadbir ke emel anda.</p></div>`);
   if (msg) showAlert('lgMsg', msg);
-  $('#loginForm').onsubmit = e => {
+
+  $('#fpBtn').onclick = e => doLogin({}, e.currentTarget);                       // tanpa ID (passkey boleh dicari)
+  $('#emailForm').onsubmit = e => { e.preventDefault(); doLogin({ login: $('#lgEmail').value.trim() }, $('#emailForm button')); };
+  $('#pwBtn').onclick = adminPwLogin;
+  if (g) mountGoogle($('#gBtn'), onGoogleLogin, { oneTap: true });
+}
+
+/** SSO: Google beri emel → semak dalam Sheet → terus minta cap jari */
+async function onGoogleLogin(idToken) {
+  showAlert('lgMsg');
+  const hello = $('#ssoHello');
+  hello.className = 'mt-5 flex items-center gap-3 rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200';
+  hello.innerHTML = `<div class="skeleton h-9 w-9 rounded-full"></div><div class="flex-1 space-y-2"><div class="skeleton h-3 w-32 rounded"></div><div class="skeleton h-3 w-44 rounded"></div></div>`;
+  try {
+    const r = await api('ssoCheck', { idToken });
+    if (!r.found) {
+      hello.classList.add('hidden');
+      return showAlert('lgMsg', `Emel ${r.email} tiada dalam sistem. Hubungi pentadbir untuk didaftarkan.`);
+    }
+    hello.innerHTML = `${avatar(r.name)}<div class="min-w-0"><p class="truncate text-sm font-medium text-slate-900">Hai, ${esc(r.name)}</p>
+      <p class="truncate text-xs text-slate-500">${esc(r.email)} · ${esc(r.staffId)}</p></div><span class="ml-auto text-emerald-600">${ico('check')}</span>`;
+    store.set('lastEmail', r.email);
+    if (!r.registered) {
+      return showAlert('lgMsg', 'Akaun anda belum mendaftar cap jari. Semak emel untuk link pendaftaran' +
+        (r.role === 'ADMIN' ? ', atau log masuk admin dengan kata laluan di bawah.' : ', atau minta pentadbir menghantarnya semula.'));
+    }
+    await doLogin({ idToken });                 // kotak cap jari muncul serta-merta
+  } catch (e) { hello.classList.add('hidden'); showAlert('lgMsg', e.message); }
+}
+
+async function doLogin(params, btnEl) {
+  showAlert('lgMsg');
+  const run = async () => {
+    try { finishLogin(await biometric('LOGIN', params)); }
+    catch (e) { if (e.message !== 'Dibatalkan.') showAlert('lgMsg', e.message); }
+  };
+  return btnEl ? busy(btnEl, run) : run();
+}
+
+function finishLogin(out) {
+  store.set('session', out.sessionToken, true);
+  S.token = out.sessionToken; S.me = out.staff;
+  if (location.hash && location.hash !== '#/home') location.hash = '#/home';
+  renderShell();
+}
+
+/** Log masuk admin dengan emel + kata laluan */
+function adminPwLogin() {
+  const m = openModal(`${modalHead('Log masuk admin', 'Guna emel dan kata laluan admin')}
+    <form id="pwf" class="space-y-4 px-6 py-5">
+      <div><label class="${C.label}">Emel</label><input name="login" type="email" class="${C.input}" required autocomplete="username" value="${esc(store.get('lastEmail') || '')}"></div>
+      <div><label class="${C.label}">Kata laluan</label><input name="pw" type="password" class="${C.input}" required autocomplete="current-password"></div>
+      <div id="pwErr" class="hidden rounded-lg bg-rose-50 px-3 py-2.5 text-sm text-rose-700"></div>
+    </form>
+    ${modalFoot(btn('secondary', 'Batal', 'data-close') + `<button type="submit" form="pwf" class="${C.btn} ${C.primary}">Log masuk</button>`)}`, { size: 'sm' });
+  m.q('#pwf').onsubmit = e => {
     e.preventDefault();
-    const staffId = $('#lgId').value.trim().toUpperCase();
-    busy($('#loginForm button'), async () => {
-      showAlert('lgMsg');
+    const f = new FormData(e.target);
+    busy(m.q('[form=pwf]'), async () => {
       try {
-        const out = await biometric('LOGIN', { staffId });
-        store.set('staffId', staffId); store.set('session', out.sessionToken, true);
-        S.token = out.sessionToken; S.me = out.staff;
-        if (!location.hash) location.hash = '#/home';
-        renderShell();
-      } catch (err) { showAlert('lgMsg', err.message); }
+        const out = await api('adminPasswordLogin', { login: f.get('login').trim(), password: f.get('pw') });
+        store.set('lastEmail', f.get('login').trim());
+        m.close(); finishLogin(out);
+      } catch (err) { const el = m.q('#pwErr'); el.textContent = err.message; el.classList.remove('hidden'); }
     });
   };
 }
 
-/* ---- Phase 1: Pendaftaran ---- */
-const REG = { step: 1, staffId: '', email: '', opts: null };
+/* ═══════════ Phase 1: Pendaftaran (sekali sahaja) ═══════════ */
+const REG = { step: 1, email: '', masked: '', opts: null };
 function renderRegister() {
-  const steps = ['Staff ID', 'Pengesahan', 'Cap jari'];
+  const steps = ['Emel', 'Pengesahan', 'Cap jari'];
   const bar = REG.step <= 3 ? `<ol class="mb-6 flex items-center gap-2">${steps.map((t, i) => {
       const n = i + 1, done = n < REG.step, cur = n === REG.step;
       return `<li class="flex flex-1 items-center gap-2"><span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${done ? 'bg-indigo-600 text-white' : cur ? 'bg-indigo-50 text-indigo-700 ring-2 ring-indigo-600' : 'bg-slate-100 text-slate-400'}">${done ? ico('check', 'h-4 w-4') : n}</span>
         <span class="hidden text-xs font-medium sm:inline ${cur ? 'text-slate-900' : 'text-slate-400'}">${t}</span>${n < 3 ? '<span class="h-px flex-1 bg-slate-200"></span>' : ''}</li>`; }).join('')}</ol>` : '';
+  const g = !!S.cfg.googleClientId;
 
   let body = '';
   if (REG.step === 1) body = `<h2 class="text-lg font-semibold">Pendaftaran Digital ID</h2>
-    <p class="mt-1 text-sm text-slate-500">Masukkan Staff ID anda. Kod pengesahan akan dihantar ke emel rasmi anda.</p>
-    <form id="rf" class="mt-6 space-y-4"><div><label class="${C.label}">Staff ID</label>
-      <input id="rgId" class="${C.input} uppercase" autocapitalize="characters" placeholder="S001" required value="${esc(REG.staffId)}"></div>
-      <button class="${C.btn} ${C.primary} w-full py-3">${ico('mail')}Hantar kod pengesahan</button></form>`;
-  if (REG.step === 2) body = `<h2 class="text-lg font-semibold">Pengesahan awal</h2>
-    <p class="mt-1 text-sm text-slate-500">Kod 6 digit telah dihantar ke <b class="text-slate-700">${esc(REG.email)}</b>.</p>
+    <p class="mt-1 text-sm text-slate-500">Sahkan emel rasmi anda untuk mula mendaftar.</p>
+    ${g ? `<div id="gReg" class="mt-6 flex min-h-[44px] w-full justify-center"></div>
+      <p class="mt-2 text-center text-xs text-slate-400">Paling cepat — tiada kod perlu ditaip</p>
+      <div class="my-5 flex items-center gap-3 text-xs text-slate-400"><span class="h-px flex-1 bg-slate-200"></span>atau guna kod emel<span class="h-px flex-1 bg-slate-200"></span></div>` : ''}
+    <form id="rf" class="${g ? '' : 'mt-6'} space-y-4"><div><label class="${C.label}">Emel rasmi</label>
+      <input id="rgEmail" type="email" class="${C.input}" placeholder="nama@organisasi.gov.my" autocomplete="email" required value="${esc(REG.email)}"></div>
+      <button class="${C.btn} ${g ? C.secondary : C.primary} w-full py-3">${ico('mail')}Hantar kod pengesahan</button></form>`;
+  if (REG.step === 2) body = `<h2 class="text-lg font-semibold">Masukkan kod</h2>
+    <p class="mt-1 text-sm text-slate-500">Kod 6 digit telah dihantar ke <b class="text-slate-700">${esc(REG.masked)}</b>.</p>
     <form id="rf" class="mt-6 space-y-4"><div><label class="${C.label}">Kod pengesahan</label>
       <input id="rgOtp" class="${C.input} text-center font-mono text-2xl tracking-[.5em]" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="······" required></div>
       <button class="${C.btn} ${C.primary} w-full py-3">Sahkan kod</button></form>
@@ -365,20 +461,27 @@ function renderRegister() {
     <button id="rgPasskey" class="${C.btn} ${C.primary} mt-6 w-full py-3">${ico('finger')}Register Biometric / Passkey</button></div>`;
   if (REG.step === 4) body = `<div class="text-center"><div class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">${ico('check', 'h-8 w-8')}</div>
     <h2 class="mt-5 text-lg font-semibold">Pendaftaran berjaya</h2>
-    <p class="mt-2 text-sm text-slate-500">Passkey telah dikaitkan dengan akaun <b class="text-slate-700">${esc(REG.staffId)}</b>. Anda kini boleh log masuk, merekod kehadiran dan menandatangani dokumen dengan cap jari.</p>
-    <button id="rgDone" class="${C.btn} ${C.primary} mt-6 w-full py-3">Ke halaman log masuk</button></div>`;
+    <p class="mt-2 text-sm text-slate-500">Cap jari anda telah dikaitkan dengan <b class="text-slate-700">${esc(REG.email)}</b>. Mulai sekarang, log masuk hanya perlukan cap jari — tiada kata laluan.</p>
+    <button id="rgDone" class="${C.btn} ${C.primary} mt-6 w-full py-3">Log masuk sekarang</button></div>`;
   authLayout(bar + body + alertBox('rgMsg'));
 
   const sendOtp = b => busy(b, async () => {
-    try { const r = await api('regStart', { token: regToken, staffId: REG.staffId }); REG.email = r.maskedEmail;
+    try { const r = await api('regStart', { token: regToken, email: REG.email }); REG.masked = r.maskedEmail;
       const resend = REG.step === 2; REG.step = 2; renderRegister(); if (resend) showAlert('rgMsg', 'Kod baharu telah dihantar.', true);
     } catch (e) { showAlert('rgMsg', e.message); }
   });
-  if (REG.step === 1) $('#rf').onsubmit = e => { e.preventDefault(); REG.staffId = $('#rgId').value.trim().toUpperCase(); sendOtp($('#rf button')); };
+  if (REG.step === 1) {
+    $('#rf').onsubmit = e => { e.preventDefault(); REG.email = $('#rgEmail').value.trim().toLowerCase(); sendOtp($('#rf button')); };
+    if (g) mountGoogle($('#gReg'), async idToken => {
+      showAlert('rgMsg');
+      try { REG.opts = await api('regVerifyGoogle', { token: regToken, idToken }); REG.email = REG.opts.user.name; REG.step = 3; renderRegister(); }
+      catch (err) { showAlert('rgMsg', err.message); }
+    }, { text: 'continue_with' });
+  }
   if (REG.step === 2) {
     $('#rgResend').onclick = e => sendOtp(e.currentTarget);
     $('#rf').onsubmit = e => { e.preventDefault(); busy($('#rf button'), async () => {
-      try { REG.opts = await api('regVerifyOtp', { token: regToken, staffId: REG.staffId, otp: $('#rgOtp').value }); REG.step = 3; renderRegister(); }
+      try { REG.opts = await api('regVerifyOtp', { token: regToken, email: REG.email, otp: $('#rgOtp').value }); REG.step = 3; renderRegister(); }
       catch (err) { showAlert('rgMsg', err.message); } }); };
   }
   if (REG.step === 3) $('#rgPasskey').onclick = async e => {
@@ -390,7 +493,8 @@ function renderRegister() {
         challenge: b64u.dec(o.challenge), rp: o.rp,
         user: { id: b64u.dec(o.user.id), name: o.user.name, displayName: o.user.displayName },
         pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
-        authenticatorSelection: { authenticatorAttachment: 'platform', residentKey: 'preferred', userVerification: 'required' },
+        // residentKey "required" → passkey boleh dicari, jadi log masuk tidak perlu taip ID/emel
+        authenticatorSelection: { authenticatorAttachment: 'platform', residentKey: 'required', requireResidentKey: true, userVerification: 'required' },
         attestation: 'none', timeout: 60000,
         excludeCredentials: o.excludeCredentials.map(c => ({ type: 'public-key', id: b64u.dec(c.id) }))
       }});
@@ -399,11 +503,11 @@ function renderRegister() {
     if (!r.getPublicKey || !r.getAuthenticatorData) return showAlert('rgMsg', 'Browser terlalu lama. Sila kemas kini browser anda.');
     busy(b, async () => {
       try {
-        await api('regFinish', { token: regToken, staffId: REG.staffId, deviceLabel: deviceLabel(), credential: {
+        await api('regFinish', { token: regToken, email: REG.email, deviceLabel: deviceLabel(), credential: {
           id: cred.id, rawId: b64u.enc(cred.rawId), clientDataJSON: b64u.enc(r.clientDataJSON),
           authenticatorData: b64u.enc(r.getAuthenticatorData()), publicKey: b64u.enc(r.getPublicKey()),
           publicKeyAlg: r.getPublicKeyAlgorithm(), transports: r.getTransports ? r.getTransports() : [] } });
-        store.set('staffId', REG.staffId); REG.step = 4; renderRegister();
+        store.set('lastEmail', REG.email); REG.step = 4; renderRegister();
       } catch (err) { showAlert('rgMsg', err.message); }
     });
   };
@@ -475,6 +579,7 @@ function paintNav() {
 }
 
 function logout(msg) {
+  try { if (window.google && google.accounts) google.accounts.id.disableAutoSelect(); } catch (e) {}
   store.del('session', true); S.token = null; S.me = null; S.users = null;
   history.replaceState(null, '', location.pathname);
   renderLogin(msg);
@@ -687,7 +792,9 @@ function userForm(u) {
   const m = openModal(`${modalHead(isNew ? 'Tambah pengguna' : 'Edit pengguna', isNew ? 'Cipta akaun dan jemput pengguna mendaftar Digital ID' : u.id)}
     <form id="uf" class="space-y-5 px-6 py-5">
       <div class="grid gap-4 sm:grid-cols-2">
-        <div><label class="${C.label}">Staff ID</label><input name="id" class="${C.input} uppercase" maxlength="20" required value="${esc(u.id)}" ${isNew ? '' : 'disabled'} placeholder="S002"></div>
+        <div><label class="${C.label}">Staff ID</label>${isNew
+          ? `<div class="flex h-[42px] items-center gap-2 rounded-lg bg-slate-50 px-3 text-sm text-slate-500 ring-1 ring-inset ring-slate-200">${ico('refresh', 'h-4 w-4')}Dijana automatik</div>`
+          : `<input class="${C.input} font-mono" disabled value="${esc(u.id)}">`}</div>
         <div><label class="${C.label}">Jabatan</label><input name="dept" class="${C.input}" value="${esc(u.dept)}" placeholder="cth. Kewangan"></div>
         <div class="sm:col-span-2"><label class="${C.label}">Nama penuh</label><input name="name" class="${C.input}" required value="${esc(u.name)}"></div>
         <div class="sm:col-span-2"><label class="${C.label}">Emel rasmi</label><input name="email" type="email" class="${C.input}" required value="${esc(u.email)}" placeholder="nama@organisasi.gov.my"></div>
@@ -707,12 +814,13 @@ function userForm(u) {
   m.q('#uf').onsubmit = e => {
     e.preventDefault();
     const f = new FormData(e.target);
-    const user = { id: isNew ? f.get('id') : u.id, name: f.get('name'), email: f.get('email'), dept: f.get('dept'), role: f.get('role') };
+    const user = { id: u.id, name: f.get('name'), email: f.get('email'), dept: f.get('dept'), role: f.get('role') };
     busy(m.q('[form=uf]'), async () => {
       try {
         const r = await authed('adminUserSave', { user, isNew, sendLink: isNew && f.get('sendLink') === 'on' });
         m.close();
-        if (r.link) showLinkModal({ email: user.email }, r.link); else toast(isNew ? `Pengguna ${r.id} dicipta` : 'Perubahan disimpan');
+        if (isNew) toast(`Pengguna dicipta dengan Staff ID ${r.id}`); else toast('Perubahan disimpan');
+        if (r.link) showLinkModal({ email: user.email }, r.link);
         if (r.id === S.me.id) S.me.role = user.role;
         renderPage();
       } catch (err) { const el = m.q('#ufErr'); el.textContent = err.message; el.classList.remove('hidden'); }
@@ -897,33 +1005,10 @@ PAGES.audit = async view => {
   $('#lq').oninput = draw; draw();
 };
 
-/* ═══════════ LANGKAH 3: Log masuk admin dengan kata laluan ═══════════ */
-function adminPwLogin() {
-  const m = openModal(`${modalHead('Log masuk admin', 'Guna Staff ID dan kata laluan admin')}
-    <form id="pwf" class="space-y-4 px-6 py-5">
-      <div><label class="${C.label}">Staff ID</label><input name="id" class="${C.input} uppercase" required value="${esc($('#lgId').value)}"></div>
-      <div><label class="${C.label}">Kata laluan</label><input name="pw" type="password" class="${C.input}" required autocomplete="current-password"></div>
-      <div id="pwErr" class="hidden rounded-lg bg-rose-50 px-3 py-2.5 text-sm text-rose-700"></div>
-    </form>
-    ${modalFoot(btn('secondary', 'Batal', 'data-close') + `<button type="submit" form="pwf" class="${C.btn} ${C.primary}">Log masuk</button>`)}`, { size: 'sm' });
-  m.q('#pwf').onsubmit = e => {
-    e.preventDefault();
-    const f = new FormData(e.target);
-    busy(m.q('[form=pwf]'), async () => {
-      try {
-        const out = await api('adminPasswordLogin', { staffId: f.get('id').trim().toUpperCase(), password: f.get('pw') });
-        m.close();
-        store.set('session', out.sessionToken, true);
-        S.token = out.sessionToken; S.me = out.staff;
-        location.hash = '#/home';
-        renderShell();
-      } catch (err) { const el = m.q('#pwErr'); el.textContent = err.message; el.classList.remove('hidden'); }
-    });
-  };
-}
-  /* ═══════════ Permulaan ═══════════ */
+/* ═══════════ Permulaan ═══════════ */
 (async function boot() {
   if (!window.PublicKeyCredential) return renderUnsupported();
+  try { S.cfg = await api('publicConfig'); } catch (e) { /* teruskan tanpa SSO */ }
   if (regToken) {   // pendaftaran mesti pada telefon yang ada cap jari / Face ID
     const platform = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().catch(() => false);
     return platform ? renderRegister() : renderUnsupported();
