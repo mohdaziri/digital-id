@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Digital ID</title>
+<style>
+  :root { --navy:#1f3a5f; --navy2:#2c5282; --bg:#f3f5f9; --ok:#1e7d4f; --err:#b42318; --muted:#667085; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:#1d2939; }
+  header { background:var(--navy); color:#fff; padding:18px 20px; }
+  header h1 { margin:0; font-size:18px; letter-spacing:.3px; }
+  header p { margin:4px 0 0; font-size:13px; opacity:.8; }
+  main { max-width:480px; margin:0 auto; padding:16px; }
+  .card { background:#fff; border-radius:14px; padding:18px; margin-bottom:14px; box-shadow:0 1px 3px rgba(16,24,40,.08); }
+  .card h2 { margin:0 0 10px; font-size:16px; }
+  label { display:block; font-size:13px; color:var(--muted); margin:10px 0 4px; }
+  input { width:100%; padding:12px; font-size:16px; border:1px solid #d0d5dd; border-radius:10px; }
+  button { width:100%; padding:13px; margin-top:12px; font-size:15px; font-weight:600; border:0; border-radius:10px;
+           background:var(--navy); color:#fff; cursor:pointer; }
+  button.secondary { background:#e4e7ec; color:#1d2939; }
+  button:disabled { opacity:.5; }
+  .row { display:flex; gap:10px; } .row button { flex:1; }
+  .msg { font-size:14px; padding:10px 12px; border-radius:10px; margin-top:12px; display:none; }
+  .msg.err { display:block; background:#fef3f2; color:var(--err); }
+  .msg.ok { display:block; background:#ecfdf3; color:var(--ok); }
+  .muted { color:var(--muted); font-size:13px; }
+  .hidden { display:none !important; }
+  .steps { display:flex; gap:6px; margin-bottom:14px; }
+  .steps div { flex:1; height:4px; border-radius:2px; background:#d0d5dd; }
+  .steps div.on { background:var(--navy2); }
+  .item { display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #eaecf0; gap:10px; }
+  .item:last-child { border-bottom:0; }
+  .item button { width:auto; margin:0; padding:8px 14px; font-size:13px; }
+  .badge { font-size:12px; padding:3px 8px; border-radius:20px; background:#ecfdf3; color:var(--ok); white-space:nowrap; }
+  .mono { font-family:ui-monospace,Menlo,monospace; font-size:11px; word-break:break-all; color:var(--muted); }
+  /* Modal pengesahan biometrik */
+  .overlay { position:fixed; inset:0; background:rgba(16,24,40,.55); display:flex; align-items:flex-end; justify-content:center; z-index:9; }
+  .sheet { background:#fff; width:100%; max-width:480px; border-radius:18px 18px 0 0; padding:22px 20px 28px; text-align:center; }
+  .fp { width:84px; height:84px; margin:6px auto 10px; border-radius:50%; background:#eef4ff; display:flex; align-items:center; justify-content:center; }
+  .fp svg { width:48px; height:48px; stroke:var(--navy2); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Digital ID</h1>
+  <p id="subtitle">Pengesahan cap jari / Face ID</p>
+</header>
+
+<main>
+  <div id="unsupported" class="card hidden">
+    <h2>Peranti tidak disokong</h2>
+    <p class="muted">Browser ini tidak menyokong passkey dengan cap jari/Face ID. Gunakan Chrome (Android) atau Safari (iPhone) versi terkini, dan pastikan kunci skrin + cap jari/Face ID telah ditetapkan pada telefon.</p>
+  </div>
+
+  <!-- ============ PHASE 1: PENDAFTARAN ============ -->
+  <section id="reg" class="hidden">
+    <div class="card">
+      <div class="steps"><div id="s1" class="on"></div><div id="s2"></div><div id="s3"></div></div>
+
+      <div id="regStep1">
+        <h2>Pendaftaran Digital ID</h2>
+        <p class="muted">Masukkan Staff ID anda. Kod pengesahan akan dihantar ke emel rasmi anda.</p>
+        <label>Staff ID</label>
+        <input id="regStaffId" autocomplete="username" autocapitalize="characters" placeholder="cth. S001">
+        <button id="btnRegStart">Hantar kod pengesahan</button>
+      </div>
+
+      <div id="regStep2" class="hidden">
+        <h2>Pengesahan awal</h2>
+        <p class="muted">Kod 6 digit telah dihantar ke <b id="maskedEmail"></b>.</p>
+        <label>Kod pengesahan</label>
+        <input id="regOtp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••">
+        <button id="btnRegOtp">Sahkan kod</button>
+        <button id="btnRegResend" class="secondary">Hantar semula kod</button>
+      </div>
+
+      <div id="regStep3" class="hidden">
+        <h2>Daftar cap jari / Face ID</h2>
+        <p class="muted">Hai <b id="regName"></b>. Tekan butang di bawah dan imbas cap jari atau Face ID apabila telefon meminta. Kunci peribadi kekal dalam telefon anda dan tidak dihantar ke pelayan.</p>
+        <button id="btnRegPasskey">Register Biometric / Passkey</button>
+      </div>
+
+      <div id="regDone" class="hidden" style="text-align:center">
+        <div class="fp" style="background:#ecfdf3"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" style="stroke:#1e7d4f"><path d="M5 12l5 5L20 7"/></svg></div>
+        <h2>Pendaftaran berjaya</h2>
+        <p class="muted">Passkey telah dikaitkan dengan akaun <b id="regDoneId"></b>. Anda kini boleh log masuk, merekod kehadiran dan menandatangani dokumen dengan cap jari.</p>
+        <button id="btnGoLogin">Ke halaman log masuk</button>
+      </div>
+      <div id="regMsg" class="msg"></div>
+    </div>
+  </section>
+
+  <!-- ============ LOG MASUK ============ -->
+  <section id="login" class="hidden">
+    <div class="card">
+      <h2>Log masuk</h2>
+      <label>Staff ID</label>
+      <input id="loginStaffId" autocomplete="username webauthn" autocapitalize="characters" placeholder="cth. S001">
+      <button id="btnLogin">Log masuk dengan cap jari</button>
+      <div id="loginMsg" class="msg"></div>
+    </div>
+    <p class="muted" style="text-align:center">Belum daftar? Gunakan link pendaftaran yang dihantar oleh admin ke emel anda.</p>
+  </section>
+
+  <!-- ============ PAPAN PEMUKA ============ -->
+  <section id="dash" class="hidden">
+    <div class="card">
+      <h2 id="dashName"></h2>
+      <div class="muted" id="dashMeta"></div>
+    </div>
+
+    <div class="card">
+      <h2>Kehadiran hari ini</h2>
+      <div class="row">
+        <button id="btnIn">Daftar Masuk</button>
+        <button id="btnOut" class="secondary">Daftar Keluar</button>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:12px">
+        <input type="checkbox" id="useGeo" style="width:auto"> Sertakan lokasi GPS
+      </label>
+      <div id="attList" style="margin-top:8px"></div>
+    </div>
+
+    <div class="card">
+      <h2>Dokumen untuk ditandatangani</h2>
+      <div id="docList"></div>
+    </div>
+    <div id="dashMsg" class="msg"></div>
+    <button id="btnLogout" class="secondary">Log keluar</button>
+  </section>
+</main>
+
+<!-- Modal pengesahan cap jari -->
+<div id="authModal" class="overlay hidden">
+  <div class="sheet">
+    <div class="fp"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round">
+      <path d="M12 11v3a7 7 0 0 1-1 3.6"/><path d="M8.5 7.9A4 4 0 0 1 16 10v2"/><path d="M5.2 15.5A11 11 0 0 0 6 12V10a6 6 0 0 1 9.7-4.7"/>
+      <path d="M18 10.5v1.5c0 2-.3 3.9-1 5.7"/><path d="M9 11.5V14a10 10 0 0 1-1.4 5"/><path d="M14 13.5c0 2.4-.4 4.6-1.2 6.5"/></svg></div>
+    <h2 id="authTitle" style="margin:0 0 6px"></h2>
+    <div id="authDetail" class="muted"></div>
+    <button id="btnAuthGo">Imbas cap jari / Face ID</button>
+    <button id="btnAuthCancel" class="secondary">Batal</button>
+  </div>
+</div>
+
+<script>
+/* ======= KONFIGURASI: tampal URL Web App Apps Script anda (berakhir dengan /exec) ======= */
+const API_URL = 'https://script.google.com/macros/s/PASTE_DEPLOYMENT_ID/exec';
+
+/* ---------------- Utiliti ---------------- */
+const $ = id => document.getElementById(id);
+const show = (id, on = true) => $(id).classList.toggle('hidden', !on);
+const b64u = {
+  enc(buf) { const b = new Uint8Array(buf); let s = ''; for (const x of b) s += String.fromCharCode(x);
+             return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); },
+  dec(str) { str = str.replace(/-/g, '+').replace(/_/g, '/'); while (str.length % 4) str += '=';
+             const s = atob(str), b = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) b[i] = s.charCodeAt(i); return b.buffer; }
+};
+const store = {
+  get(k, s) { try { return (s ? sessionStorage : localStorage).getItem(k); } catch (e) { return null; } },
+  set(k, v, s) { try { (s ? sessionStorage : localStorage).setItem(k, v); } catch (e) {} },
+  del(k, s) { try { (s ? sessionStorage : localStorage).removeItem(k); } catch (e) {} }
+};
+function msg(id, text, ok) { const el = $(id); el.textContent = text || ''; el.className = 'msg' + (text ? (ok ? ' ok' : ' err') : ''); }
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+
+async function api(action, body = {}) {
+  // Content-Type text/plain → "simple request", tiada CORS preflight (Apps Script tidak menyokong OPTIONS)
+  const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action, ...body }) });
+  const j = await res.json();
+  if (!j.ok) throw new Error(j.error);
+  return j.data;
+}
+
+async function busy(btn, fn) {
+  const t = btn.textContent; btn.disabled = true; btn.textContent = 'Sila tunggu…';
+  try { return await fn(); } finally { btn.disabled = false; btn.textContent = t; }
+}
+
+function webauthnError(e) {
+  if (e.name === 'NotAllowedError') return 'Pengesahan dibatalkan atau tamat masa.';
+  if (e.name === 'InvalidStateError') return 'Telefon ini sudah didaftarkan untuk akaun ini.';
+  if (e.name === 'SecurityError') return 'Ralat keselamatan: semak RP_ID/ORIGIN dalam Config sama dengan domain halaman ini.';
+  return e.message || String(e);
+}
+
+function deviceLabel() {
+  const ua = navigator.userAgent;
+  if (/iPhone/.test(ua)) return 'iPhone';
+  if (/iPad/.test(ua)) return 'iPad';
+  const m = ua.match(/Android[^;]*;\s*([^;)]+)/);
+  if (m) return 'Android ' + m[1].trim();
+  return /Windows/.test(ua) ? 'Windows' : /Mac/.test(ua) ? 'Mac' : 'Peranti';
+}
+
+/* ---------------- Phase 1: Pendaftaran ---------------- */
+const regToken = new URLSearchParams(location.search).get('reg');
+let regOptions = null;
+
+function regStep(n) {
+  ['regStep1', 'regStep2', 'regStep3', 'regDone'].forEach((id, i) => show(id, i + 1 === n));
+  ['s1', 's2', 's3'].forEach((id, i) => $(id).classList.toggle('on', i < n));
+}
+
+async function sendOtp(btn) {
+  msg('regMsg');
+  await busy(btn, async () => {
+    try {
+      const r = await api('regStart', { token: regToken, staffId: $('regStaffId').value.trim() });
+      $('maskedEmail').textContent = r.maskedEmail;
+      regStep(2);
+      if (btn.id === 'btnRegResend') msg('regMsg', 'Kod baharu telah dihantar.', true);
+    } catch (e) { msg('regMsg', e.message); }
+  });
+}
+$('btnRegStart').onclick = e => sendOtp(e.target);
+$('btnRegResend').onclick = e => sendOtp(e.target);
+
+$('btnRegOtp').onclick = e => busy(e.target, async () => {
+  msg('regMsg');
+  try {
+    regOptions = await api('regVerifyOtp', { token: regToken, staffId: $('regStaffId').value.trim(), otp: $('regOtp').value });
+    $('regName').textContent = regOptions.user.displayName;
+    regStep(3);
+  } catch (err) { msg('regMsg', err.message); }
+});
+
+// Dipanggil terus dari klik (keperluan "user gesture" Safari iOS)
+$('btnRegPasskey').onclick = async e => {
+  msg('regMsg');
+  const btn = e.target;
+  let cred;
+  try {
+    cred = await navigator.credentials.create({ publicKey: {
+      challenge: b64u.dec(regOptions.challenge),
+      rp: regOptions.rp,
+      user: { id: b64u.dec(regOptions.user.id), name: regOptions.user.name, displayName: regOptions.user.displayName },
+      pubKeyCredParams: [{ type: 'public-key', alg: -7 }],          // ES256
+      authenticatorSelection: { authenticatorAttachment: 'platform', residentKey: 'preferred', userVerification: 'required' },
+      attestation: 'none',
+      timeout: 60000,
+      excludeCredentials: regOptions.excludeCredentials.map(c => ({ type: 'public-key', id: b64u.dec(c.id) }))
+    }});
+  } catch (err) { return msg('regMsg', webauthnError(err)); }
+
+  const r = cred.response;
+  if (!r.getPublicKey || !r.getAuthenticatorData) return msg('regMsg', 'Browser terlalu lama. Sila kemas kini browser anda.');
+
+  await busy(btn, async () => {
+    try {
+      const out = await api('regFinish', {
+        token: regToken, staffId: $('regStaffId').value.trim(), deviceLabel: deviceLabel(),
+        credential: {
+          id: cred.id, rawId: b64u.enc(cred.rawId),
+          clientDataJSON: b64u.enc(r.clientDataJSON),
+          authenticatorData: b64u.enc(r.getAuthenticatorData()),
+          publicKey: b64u.enc(r.getPublicKey()),
+          publicKeyAlg: r.getPublicKeyAlgorithm(),
+          transports: r.getTransports ? r.getTransports() : []
+        }
+      });
+      store.set('staffId', out.staffId);
+      $('regDoneId').textContent = out.staffId + ' — ' + out.name;
+      regStep(4);
+    } catch (err) { msg('regMsg', err.message); }
+  });
+};
+
+$('btnGoLogin').onclick = () => { history.replaceState(null, '', location.pathname); route(); };
+
+/* ---------------- Pengesahan cap jari (LOGIN / ATTENDANCE / SIGN) ---------------- */
+// Langkah 1: minta cabaran dari server & papar ringkasan. Langkah 2: pengguna tekan → imbas cap jari.
+function biometric(purpose, params) {
+  return new Promise(async (resolve, reject) => {
+    let start;
+    try { start = await api('authStart', { purpose, ...params }); } catch (e) { return reject(e); }
+
+    const s = start.summary;
+    $('authTitle').textContent = s.label;
+    $('authDetail').innerHTML = s.title
+      ? `<b>${esc(s.title)}</b><div class="mono" style="margin-top:6px">SHA-256: ${esc(s.docHash)}</div><p>Dengan mengimbas cap jari, anda bersetuju menandatangani dokumen ini.</p>`
+      : (s.at ? esc(s.at) : 'Sahkan identiti anda');
+    show('authModal');
+
+    const close = () => { show('authModal', false); $('btnAuthGo').onclick = $('btnAuthCancel').onclick = null; };
+    $('btnAuthCancel').onclick = () => { close(); reject(new Error('Dibatalkan.')); };
+    $('btnAuthGo').onclick = async () => {
+      const pk = start.publicKey;
+      let a;
+      try {
+        a = await navigator.credentials.get({ publicKey: {
+          challenge: b64u.dec(pk.challenge), rpId: pk.rpId, timeout: pk.timeout, userVerification: pk.userVerification,
+          allowCredentials: pk.allowCredentials.map(c => ({ type: 'public-key', id: b64u.dec(c.id), transports: c.transports.length ? c.transports : undefined }))
+        }});
+      } catch (e) { close(); return reject(new Error(webauthnError(e))); }
+      $('btnAuthGo').disabled = true; $('btnAuthGo').textContent = 'Mengesahkan…';
+      try {
+        const out = await api('authFinish', { challengeId: start.challengeId, credential: {
+          id: a.id,
+          clientDataJSON: b64u.enc(a.response.clientDataJSON),
+          authenticatorData: b64u.enc(a.response.authenticatorData),
+          signature: b64u.enc(a.response.signature)
+        }});
+        resolve(out);
+      } catch (e) { reject(e); }
+      finally { $('btnAuthGo').disabled = false; $('btnAuthGo').textContent = 'Imbas cap jari / Face ID'; close(); }
+    };
+  });
+}
+
+/* ---------------- Log masuk & papan pemuka ---------------- */
+$('btnLogin').onclick = e => busy(e.target, async () => {
+  msg('loginMsg');
+  const staffId = $('loginStaffId').value.trim().toUpperCase();
+  try {
+    const out = await biometric('LOGIN', { staffId });
+    store.set('staffId', staffId);
+    store.set('session', out.sessionToken, true);
+    await loadDash();
+  } catch (err) { msg('loginMsg', err.message); }
+});
+
+async function loadDash() {
+  const d = await api('me', { sessionToken: store.get('session', true) });
+  show('login', false); show('dash');
+  $('dashName').textContent = d.staff.name;
+  $('dashMeta').textContent = d.staff.id + (d.staff.dept ? ' · ' + d.staff.dept : '');
+  $('attList').innerHTML = d.attendanceToday.length
+    ? d.attendanceToday.map(a => `<div class="item"><span>${a.type === 'IN' ? 'Masuk' : 'Keluar'}</span><span class="muted">${esc(a.time.slice(11))}</span></div>`).join('')
+    : '<p class="muted">Belum ada rekod hari ini.</p>';
+  $('docList').innerHTML = d.docs.length ? d.docs.map(doc => `
+      <div class="item"><div><div>${esc(doc.title)}</div><div class="muted">${esc(doc.id)}${doc.signed ? ' · ' + esc(doc.receiptId) : ''}</div></div>
+      ${doc.signed ? '<span class="badge">Ditandatangani</span>' : `<button data-doc="${esc(doc.id)}">Tandatangan</button>`}</div>`).join('')
+    : '<p class="muted">Tiada dokumen.</p>';
+  document.querySelectorAll('[data-doc]').forEach(b => b.onclick = () => signDoc(b.dataset.doc));
+}
+
+function getGeo() {
+  return new Promise(res => {
+    if (!$('useGeo').checked || !navigator.geolocation) return res({});
+    navigator.geolocation.getCurrentPosition(p => res({ lat: p.coords.latitude, lng: p.coords.longitude }), () => res({}), { timeout: 8000 });
+  });
+}
+
+async function attendance(type, btn) {
+  msg('dashMsg');
+  await busy(btn, async () => {
+    try {
+      const geo = await getGeo();
+      const out = await biometric('ATTENDANCE', { sessionToken: store.get('session', true), type, ...geo });
+      msg('dashMsg', `${type === 'IN' ? 'Daftar masuk' : 'Daftar keluar'} direkod (${out.time}). Rujukan: ${out.recordId}`, true);
+      await loadDash();
+    } catch (e) { handleErr(e); }
+  });
+}
+$('btnIn').onclick = e => attendance('IN', e.target);
+$('btnOut').onclick = e => attendance('OUT', e.target);
+
+async function signDoc(docId) {
+  msg('dashMsg');
+  try {
+    const out = await biometric('SIGN', { sessionToken: store.get('session', true), docId });
+    msg('dashMsg', `Dokumen "${out.title}" ditandatangani. Resit: ${out.receiptId}`, true);
+    await loadDash();
+  } catch (e) { handleErr(e); }
+}
+
+function handleErr(e) {
+  if (/Sesi tamat/.test(e.message)) { store.del('session', true); show('dash', false); show('login'); msg('loginMsg', e.message); }
+  else msg('dashMsg', e.message);
+}
+
+$('btnLogout').onclick = async () => {
+  try { await api('logout', { sessionToken: store.get('session', true) }); } catch (e) {}
+  store.del('session', true); show('dash', false); show('login');
+};
+
+/* ---------------- Permulaan ---------------- */
+async function route() {
+  ['reg', 'login', 'dash'].forEach(id => show(id, false));
+  const ok = window.PublicKeyCredential &&
+    await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().catch(() => false);
+  if (!ok) return show('unsupported');
+
+  if (regToken) { $('subtitle').textContent = 'Pendaftaran sekali sahaja'; show('reg'); regStep(1); return; }
+  $('subtitle').textContent = 'Pengesahan cap jari / Face ID';
+  $('loginStaffId').value = store.get('staffId') || '';
+  if (store.get('session', true)) {
+    try { await loadDash(); return; } catch (e) { store.del('session', true); }
+  }
+  show('login');
+}
+route();
+</script>
+</body>
+</html>
