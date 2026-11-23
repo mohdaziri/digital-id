@@ -1,0 +1,1847 @@
+<!DOCTYPE html>
+<html lang="ms" class="h-full">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#4f46e5">
+<title>Digital ID</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = { theme: { extend: { fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] } } } };
+</script>
+<style>
+  [x-cloak] { display: none; }
+  .fp-pulse { animation: fp 1.8s ease-in-out infinite; }
+  @keyframes fp { 0%,100% { box-shadow: 0 0 0 0 rgba(79,70,229,.35); } 50% { box-shadow: 0 0 0 14px rgba(79,70,229,0); } }
+  .skeleton { background: linear-gradient(90deg,#f1f5f9 25%,#e2e8f0 37%,#f1f5f9 63%); background-size: 400% 100%; animation: sk 1.4s ease infinite; }
+  @keyframes sk { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+</style>
+</head>
+<body class="h-full bg-slate-50 font-sans text-slate-800 antialiased">
+<div id="root"></div>
+<div id="toasts" class="pointer-events-none fixed inset-x-0 bottom-0 z-[60] flex flex-col items-center gap-2 p-4 sm:items-end"></div>
+
+<script>
+/* ═══════════ KONFIGURASI: URL Web App Apps Script (berakhir /exec) ═══════════ */
+const API_URL = 'https://script.google.com/macros/s/AKfycbw2y2NPcYYVmb0WMdon_M07LsbzFRzTcgY0S3kGRJUaIH2lb2OFaP1Q4zJaA1ah6viTeA/exec';
+const APP_NAME = 'Digital ID';
+
+/* ═══════════ Utiliti ═══════════ */
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+const b64u = {
+  enc(buf) { let s = ''; for (const x of new Uint8Array(buf)) s += String.fromCharCode(x);
+             return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); },
+  dec(str) { str = str.replace(/-/g, '+').replace(/_/g, '/'); while (str.length % 4) str += '=';
+             const s = atob(str), b = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) b[i] = s.charCodeAt(i); return b.buffer; }
+};
+const store = {
+  get(k, s) { try { return (s ? sessionStorage : localStorage).getItem(k); } catch (e) { return null; } },
+  set(k, v, s) { try { (s ? sessionStorage : localStorage).setItem(k, v); } catch (e) {} },
+  del(k, s) { try { (s ? sessionStorage : localStorage).removeItem(k); } catch (e) {} }
+};
+const todayKL = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kuala_Lumpur' });
+const initials = n => String(n || '?').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+const DAYS = ['Ahd', 'Isn', 'Sel', 'Rab', 'Kha', 'Jum', 'Sab'];
+const fmtDateLong = () => new Date().toLocaleDateString('ms-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kuala_Lumpur' });
+function greeting() { const h = Number(new Date().toLocaleString('en-GB', { hour: '2-digit', hour12: false, timeZone: 'Asia/Kuala_Lumpur' }));
+  return h < 12 ? 'Selamat pagi' : h < 15 ? 'Selamat tengah hari' : h < 19 ? 'Selamat petang' : 'Selamat malam'; }
+
+/* ═══════════ Ikon (SVG garis) ═══════════ */
+const P = {
+  finger: 'M12 11v3a7 7 0 0 1-1 3.6M8.5 7.9A4 4 0 0 1 16 10v2M5.2 15.5A11 11 0 0 0 6 12v-2a6 6 0 0 1 9.7-4.7M18 10.5V12c0 2-.3 3.9-1 5.7M9 11.5V14a10 10 0 0 1-1.4 5M14 13.5c0 2.4-.4 4.6-1.2 6.5',
+  home: 'M3 10.5 12 3l9 7.5M5 9v11h5v-6h4v6h5V9',
+  users: 'M16 19v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1M9.5 10a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7M21 19v-1a4 4 0 0 0-3-3.9M15.5 3.1a3.5 3.5 0 0 1 0 6.8',
+  doc: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M9 13h6M9 17h6',
+  clock: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18M12 7v5l3 2',
+  pen: 'M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4',
+  list: 'M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01',
+  logout: 'M15 17l5-5-5-5M20 12H9M12 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7',
+  plus: 'M12 5v14M5 12h14',
+  search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14M20 20l-4-4',
+  dots: 'M12 5.5h.01M12 12h.01M12 18.5h.01',
+  check: 'M5 12.5l4.5 4.5L19 7',
+  x: 'M6 6l12 12M18 6 6 18',
+  mail: 'M3 6h18v12H3zM3 7l9 6 9-6',
+  key: 'M15 7a4 4 0 1 1-3.9 4.9L3 20v-3l2-2h2v-2h2l1.1-1.1A4 4 0 0 1 15 7M16 8h.01',
+  ban: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18M5.6 5.6l12.8 12.8',
+  play: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18M10 8.5v7l5.5-3.5z',
+  trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
+  edit: 'M4 20h4L19 9l-4-4L4 16z',
+  refresh: 'M20 11a8 8 0 0 0-14.9-3M4 4v4h4M4 13a8 8 0 0 0 14.9 3M20 20v-4h-4',
+  menu: 'M4 6h16M4 12h16M4 18h16',
+  download: 'M12 4v11M7 10l5 5 5-5M5 20h14',
+  shield: 'M12 3l8 3v6c0 5-3.5 8.5-8 9-4.5-.5-8-4-8-9V6zM9 12l2 2 4-4',
+  calendar: 'M7 3v3M17 3v3M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1',
+  cog: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1',
+  alert: 'M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0',
+  brief: 'M3 7h18v13H3zM8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13h18',
+  chevL: 'M15 18l-6-6 6-6',
+  face: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18M9 10h.01M15 10h.01M9.5 15a3.5 3.5 0 0 0 5 0',
+  scan: 'M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M9 10h.01M15 10h.01M9.5 15a3.5 3.5 0 0 0 5 0',
+  chevR: 'M9 18l6-6-6-6',
+  pin: 'M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21M12 12a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5',
+  copy: 'M9 9h11v11H9zM5 15H4V4h11v1',
+  link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7L11.5 6.8M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1.5-1.5',
+  phone: 'M8 3h8a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1M11 18h2',
+  login: 'M10 17l5-5-5-5M15 12H3M14 3h5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-5',
+  arrowIn: 'M11 16l-4-4 4-4M7 12h10M17 4v16',
+  arrowOut: 'M13 8l4 4-4 4M17 12H7M7 4v16'
+};
+const ico = (n, c = 'h-5 w-5') => `<svg class="${c} shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true"><path d="${P[n]}"/></svg>`;
+
+/* ═══════════ Kelas UI ═══════════ */
+const C = {
+  input: 'block w-full rounded-lg border-0 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 disabled:bg-slate-50 disabled:text-slate-500',
+  btn: 'inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2.5 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+  primary: 'bg-indigo-600 text-white shadow-sm hover:bg-indigo-500 focus-visible:outline-indigo-600',
+  secondary: 'bg-white text-slate-700 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50',
+  danger: 'bg-rose-600 text-white shadow-sm hover:bg-rose-500',
+  ghost: 'text-slate-600 hover:bg-slate-100',
+  card: 'rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/70',
+  label: 'block text-sm font-medium text-slate-700 mb-1.5',
+  th: 'px-3 sm:px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500',
+  td: 'px-3 sm:px-4 py-3.5 text-sm'
+};
+const btn = (kind, inner, attrs = '') => `<button type="button" class="${C.btn} ${C[kind]}" ${attrs}>${inner}</button>`;
+
+const BADGE = {
+  ACTIVE: ['Aktif', 'bg-emerald-50 text-emerald-700 ring-emerald-600/20'],
+  INVITED: ['Dijemput', 'bg-sky-50 text-sky-700 ring-sky-600/20'],
+  PENDING: ['Belum daftar', 'bg-amber-50 text-amber-700 ring-amber-600/20'],
+  DISABLED: ['Dinyahaktif', 'bg-slate-100 text-slate-600 ring-slate-500/20'],
+  ADMIN: ['Admin', 'bg-violet-50 text-violet-700 ring-violet-600/20'],
+  STAFF: ['Staf', 'bg-slate-50 text-slate-600 ring-slate-500/20'],
+  OPEN: ['Dibuka', 'bg-emerald-50 text-emerald-700 ring-emerald-600/20'],
+  CLOSED: ['Ditutup', 'bg-slate-100 text-slate-600 ring-slate-500/20'],
+  IN: ['Masuk', 'bg-indigo-50 text-indigo-700 ring-indigo-600/20'],
+  OUT: ['Keluar', 'bg-slate-100 text-slate-700 ring-slate-500/20'],
+  HADIR: ['Hadir', 'bg-emerald-50 text-emerald-700 ring-emerald-600/20'],
+  LEWAT: ['Lewat', 'bg-amber-50 text-amber-700 ring-amber-600/20'],
+  PULANG_AWAL: ['Pulang awal', 'bg-orange-50 text-orange-700 ring-orange-600/20'],
+  BEKERJA: ['Sedang bekerja', 'bg-indigo-50 text-indigo-700 ring-indigo-600/20'],
+  BELUM: ['Belum masuk', 'bg-slate-50 text-slate-600 ring-slate-500/20'],
+  TIDAK_HADIR: ['Tidak hadir', 'bg-rose-50 text-rose-700 ring-rose-600/20'],
+  TIADA_KELUAR: ['Tiada rekod keluar', 'bg-rose-50 text-rose-700 ring-rose-600/20'],
+  REHAT: ['Hari rehat', 'bg-slate-50 text-slate-500 ring-slate-400/20'],
+  CUTI_UMUM: ['Cuti umum', 'bg-sky-50 text-sky-700 ring-sky-600/20'],
+  AKAN_DATANG: ['—', 'bg-white text-slate-300 ring-slate-200'],
+  TIADA: ['—', 'bg-white text-slate-300 ring-slate-200'],
+  HARI_REHAT: ['Lebih masa', 'bg-violet-50 text-violet-700 ring-violet-600/20'],
+  LUAR: ['Tugas luar', 'bg-violet-50 text-violet-700 ring-violet-600/20'],
+  MENUNGGU: ['Menunggu semakan', 'bg-amber-50 text-amber-700 ring-amber-600/20'],
+  FLEXI: ['Flexi', 'bg-indigo-50 text-indigo-700 ring-indigo-600/20'],
+  TETAP: ['Tetap / Syif', 'bg-slate-50 text-slate-600 ring-slate-500/20'],
+  AKTIF: ['Aktif', 'bg-emerald-50 text-emerald-700 ring-emerald-600/20'],
+  TIDAK_AKTIF: ['Tidak aktif', 'bg-slate-100 text-slate-600 ring-slate-500/20'],
+  SIGNED: ['Ditandatangani', 'bg-emerald-50 text-emerald-700 ring-emerald-600/20'],
+  VALID: ['Sah', 'bg-emerald-50 text-emerald-700 ring-emerald-600/20'],
+  INVALID: ['Tidak sah', 'bg-rose-50 text-rose-700 ring-rose-600/20']
+};
+const badge = (k, text) => { const b = BADGE[k] || [k, 'bg-slate-50 text-slate-600 ring-slate-500/20'];
+  return `<span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${b[1]}">${esc(text || b[0])}</span>`; };
+const avatar = (name, size = 'h-9 w-9 text-xs') => `<span class="${size} inline-flex shrink-0 items-center justify-center rounded-full bg-indigo-50 font-semibold text-indigo-700">${esc(initials(name))}</span>`;
+
+const EVENT = {
+  LOGIN: 'Log masuk', ATTENDANCE_IN: 'Daftar masuk', ATTENDANCE_OUT: 'Daftar keluar', DOC_SIGNED: 'Tandatangan dokumen',
+  REG_LINK_SENT: 'Link pendaftaran dihantar', REG_OTP_SENT: 'OTP dihantar', REG_OTP_OK: 'OTP disahkan', REG_PASSKEY_OK: 'Passkey didaftarkan',
+  USER_CREATED: 'Pengguna dicipta', USER_UPDATED: 'Pengguna dikemas kini', USER_DISABLED: 'Pengguna dinyahaktif', USER_ENABLED: 'Pengguna diaktifkan',
+  USER_DELETED: 'Pengguna dipadam', REVOKED: 'Passkey dibatalkan', ROLE_ADMIN: 'Dijadikan admin', DOC_CREATED: 'Dokumen dicipta',
+  DOC_UPDATED: 'Dokumen dikemas kini', DOC_DELETED: 'Dokumen dipadam', SIG_FAIL: 'Tandatangan gagal', CLONE_SUSPECT: 'Disyaki passkey diklon'
+};
+const evLabel = e => EVENT[e] || e;
+const evDanger = e => /FAIL|CLONE|DELETED|REVOKED|DISABLED/.test(e);
+
+/* ═══════════ API ═══════════ */
+async function api(action, body = {}) {
+  let res;
+  try { res = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action, ...body }) }); }
+  catch (e) { throw new Error('Tidak dapat menghubungi pelayan. Semak sambungan internet.'); }
+  const j = await res.json();
+  if (!j.ok) {
+    if (/Sesi tamat/.test(j.error) && S.me) { logout(j.error); }
+    throw new Error(j.error);
+  }
+  return j.data;
+}
+const authed = (action, body = {}) => api(action, { sessionToken: S.token, ...body });
+
+/* ═══════════ Toast, Modal, Menu ═══════════ */
+function toast(msg, type = 'ok') {
+  const el = document.createElement('div');
+  const tone = type === 'err' ? 'text-rose-600' : 'text-emerald-600';
+  el.className = 'pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-xl bg-white p-4 shadow-lg ring-1 ring-slate-200 transition duration-300 translate-y-2 opacity-0';
+  el.innerHTML = `<span class="${tone}">${ico(type === 'err' ? 'x' : 'check')}</span><p class="text-sm text-slate-700">${esc(msg)}</p>`;
+  $('#toasts').appendChild(el);
+  requestAnimationFrame(() => el.classList.remove('translate-y-2', 'opacity-0'));
+  setTimeout(() => { el.classList.add('opacity-0'); setTimeout(() => el.remove(), 300); }, type === 'err' ? 6000 : 3500);
+}
+
+const modalStack = [];
+function openModal(html, { size = 'md', onClose, dismissable = true } = {}) {
+  const sizes = { sm: 'sm:max-w-sm', md: 'sm:max-w-lg', lg: 'sm:max-w-2xl' };
+  const wrap = document.createElement('div');
+  wrap.className = 'fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4';
+  wrap.innerHTML = `<div data-bd class="absolute inset-0 bg-slate-900/40 opacity-0 backdrop-blur-[2px] transition"></div>
+    <div data-panel role="dialog" aria-modal="true" class="relative max-h-[92vh] w-full ${sizes[size]} translate-y-4 overflow-y-auto rounded-t-2xl bg-white opacity-0 shadow-xl ring-1 ring-slate-200 transition sm:rounded-2xl">${html}</div>`;
+  document.body.appendChild(wrap);
+  const panel = $('[data-panel]', wrap), bd = $('[data-bd]', wrap);
+  requestAnimationFrame(() => { bd.classList.remove('opacity-0'); panel.classList.remove('translate-y-4', 'opacity-0'); });
+  let closed = false;
+  const m = {
+    el: wrap, q: s => $(s, wrap),
+    close(fromUser) {
+      if (closed) return; closed = true;
+      bd.classList.add('opacity-0'); panel.classList.add('translate-y-4', 'opacity-0');
+      setTimeout(() => wrap.remove(), 160);
+      modalStack.splice(modalStack.indexOf(m), 1);
+      if (fromUser && onClose) onClose();
+    },
+    dismissable
+  };
+  if (dismissable) bd.onclick = () => m.close(true);
+  $$('[data-close]', wrap).forEach(b => b.onclick = () => m.close(true));
+  modalStack.push(m);
+  setTimeout(() => { const f = $('input:not([type=checkbox]):not([disabled]),select', panel); if (f && window.innerWidth > 640) f.focus(); }, 60);
+  return m;
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeMenu(); const m = modalStack[modalStack.length - 1]; if (m && m.dismissable) m.close(true); } });
+
+const modalHead = (title, sub) => `<div class="flex items-start justify-between gap-4 border-b border-slate-100 px-6 py-4">
+  <div><h3 class="text-base font-semibold text-slate-900">${esc(title)}</h3>${sub ? `<p class="mt-0.5 text-sm text-slate-500">${esc(sub)}</p>` : ''}</div>
+  <button data-close class="-mr-2 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600" aria-label="Tutup">${ico('x')}</button></div>`;
+const modalFoot = inner => `<div class="flex flex-col-reverse gap-2 border-t border-slate-100 bg-slate-50/60 px-6 py-4 sm:flex-row sm:justify-end">${inner}</div>`;
+
+function confirmDialog({ title, message, confirmText = 'Teruskan', danger = false }) {
+  return new Promise(res => {
+    const m = openModal(`<div class="p-6"><div class="flex gap-4">
+        <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${danger ? 'bg-rose-50 text-rose-600' : 'bg-indigo-50 text-indigo-600'}">${ico(danger ? 'trash' : 'shield')}</div>
+        <div><h3 class="text-base font-semibold text-slate-900">${esc(title)}</h3><p class="mt-1 text-sm text-slate-500">${esc(message)}</p></div></div></div>
+      ${modalFoot(btn('secondary', 'Batal', 'data-close') + btn(danger ? 'danger' : 'primary', esc(confirmText), 'data-ok'))}`,
+      { size: 'sm', onClose: () => res(false) });
+    m.q('[data-ok]').onclick = () => { m.close(); res(true); };
+  });
+}
+
+function closeMenu() { const m = $('#ctxMenu'); if (m) m.remove(); }
+function openMenu(anchor, items) {
+  closeMenu();
+  const r = anchor.getBoundingClientRect();
+  const m = document.createElement('div');
+  m.id = 'ctxMenu';
+  m.className = 'fixed z-40 w-56 rounded-xl bg-white py-1.5 shadow-lg ring-1 ring-slate-200';
+  m.innerHTML = items.filter(Boolean).map((it, i) => it === '-' ? '<div class="my-1 border-t border-slate-100"></div>' :
+    `<button data-i="${i}" ${it.disabled ? 'disabled' : ''} class="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-sm ${it.danger ? 'text-rose-600 hover:bg-rose-50' : 'text-slate-700 hover:bg-slate-50'} disabled:opacity-40">${ico(it.icon, 'h-4 w-4')}${esc(it.label)}</button>`).join('');
+  document.body.appendChild(m);
+  const h = m.offsetHeight, top = r.bottom + h + 8 > window.innerHeight ? r.top - h - 4 : r.bottom + 4;
+  m.style.top = Math.max(8, top) + 'px';
+  m.style.left = Math.max(8, Math.min(r.right - 224, window.innerWidth - 232)) + 'px';
+  const list = items.filter(Boolean);
+  $$('[data-i]', m).forEach(b => b.onclick = e => { e.stopPropagation(); closeMenu(); list[b.dataset.i].onClick(); });
+  setTimeout(() => document.addEventListener('click', closeMenu, { once: true }), 0);
+}
+window.addEventListener('scroll', closeMenu, true);
+window.addEventListener('resize', closeMenu);
+
+async function busy(btnEl, fn) {
+  const html = btnEl.innerHTML; btnEl.disabled = true;
+  btnEl.innerHTML = `<svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-opacity=".25" stroke-width="3"/><path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>${btnEl.textContent.trim() ? 'Sila tunggu…' : ''}`;
+  try { return await fn(); } finally { btnEl.disabled = false; btnEl.innerHTML = html; }
+}
+
+function webauthnError(e) {
+  if (e.name === 'NotAllowedError') return 'Pengesahan dibatalkan atau tamat masa.';
+  if (e.name === 'InvalidStateError') return 'Peranti ini sudah didaftarkan untuk akaun ini.';
+  if (e.name === 'SecurityError') return 'Ralat keselamatan: semak RP_ID / ORIGIN dalam Config sama dengan domain portal.';
+  return e.message || String(e);
+}
+function deviceLabel() {
+  const ua = navigator.userAgent;
+  if (/iPhone/.test(ua)) return 'iPhone'; if (/iPad/.test(ua)) return 'iPad';
+  const m = ua.match(/Android[^;]*;\s*([^;)]+)/); if (m) return 'Android ' + m[1].replace(/Build.*/, '').trim();
+  return /Windows/.test(ua) ? 'Windows' : /Mac/.test(ua) ? 'Mac' : 'Peranti';
+}
+
+/* ═══════════ Pengesahan cap jari (2 langkah: ringkasan → imbas, sesuai Safari iOS) ═══════════ */
+async function biometric(purpose, params, pre) {
+  const start = pre || await api('authStart', { purpose, ...params });
+  const s = start.summary;
+  return new Promise((resolve, reject) => {
+    const detail = s.kind === 'ATTENDANCE'
+      ? `<p class="mt-1 text-4xl font-semibold tabular-nums tracking-tight text-slate-900">${esc(s.at)}</p>
+         <div class="mt-4 space-y-2 rounded-xl bg-slate-50 p-4 text-left text-sm ring-1 ring-slate-200">
+           ${s.where ? `<p class="flex items-start gap-2 ${s.outstation ? 'text-violet-700' : 'text-slate-700'}">${ico(s.outstation ? 'brief' : 'pin', 'h-4 w-4 mt-0.5')}<span>${esc(s.where)}</span></p>` : ''}
+           <p class="flex items-start gap-2 text-slate-600">${ico('calendar', 'h-4 w-4 mt-0.5')}<span>${esc(s.sched)}</span></p></div>
+         ${s.warning ? `<p class="mt-3 flex items-start gap-2 rounded-lg bg-amber-50 p-3 text-left text-sm text-amber-800">${ico('alert', 'h-4 w-4 mt-0.5')}<span>${esc(s.warning)}</span></p>` : ''}`
+      : s.title
+      ? `<div class="mt-4 rounded-xl bg-slate-50 p-4 text-left ring-1 ring-slate-200">
+           <p class="text-sm font-medium text-slate-900">${esc(s.title)}</p>
+           <p class="mt-2 break-all font-mono text-[11px] leading-relaxed text-slate-500">SHA-256 · ${esc(s.docHash)}</p></div>
+         <p class="mt-3 text-xs text-slate-500">Dengan mengimbas cap jari, anda bersetuju menandatangani dokumen ini secara digital.</p>`
+      : `<p class="mt-1 text-sm text-slate-500">${esc(s.at || 'Sahkan identiti anda untuk meneruskan')}</p>`;
+    const m = openModal(`<div class="px-6 pb-6 pt-8 text-center">
+        <div class="fp-pulse mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-indigo-50 text-indigo-600">${ico('finger', 'h-10 w-10')}</div>
+        <h3 class="mt-5 text-lg font-semibold text-slate-900">${esc(s.label)}</h3>${detail}
+        <div class="mt-6 grid gap-2">
+          ${btn('primary', ico('finger') + 'Imbas cap jari / Face ID', 'data-go')}
+          ${btn('ghost', 'Batal', 'data-close')}
+        </div></div>`, { size: 'sm', onClose: () => reject(new Error('Dibatalkan.')) });
+
+    m.q('[data-go]').onclick = async () => {
+      const pk = start.publicKey;
+      let a;
+      try {
+        a = await navigator.credentials.get({ publicKey: {
+          challenge: b64u.dec(pk.challenge), rpId: pk.rpId, timeout: pk.timeout, userVerification: pk.userVerification,
+          // transports tidak dihadkan → di PC, browser boleh paparkan kod QR untuk imbas dengan telefon berdaftar
+          allowCredentials: pk.allowCredentials.map(c => ({ type: 'public-key', id: b64u.dec(c.id) }))
+        }});
+      } catch (e) { m.close(); return reject(new Error(webauthnError(e))); }
+      await busy(m.q('[data-go]'), async () => {
+        try {
+          const out = await api('authFinish', { challengeId: start.challengeId, credential: {
+            id: a.id, clientDataJSON: b64u.enc(a.response.clientDataJSON),
+            authenticatorData: b64u.enc(a.response.authenticatorData), signature: b64u.enc(a.response.signature) } });
+          m.close(); resolve(out);
+        } catch (e) { m.close(); reject(e); }
+      });
+    };
+  });
+}
+
+/* ═══════════ Keadaan aplikasi ═══════════ */
+const S = { token: store.get('session', true), me: null, seq: 0, users: null, cfg: { appName: APP_NAME, googleClientId: '' } };
+const regToken = new URLSearchParams(location.search).get('reg');
+const root = $('#root');
+
+/* ═══════════ Skrin pengesahan (login / daftar) ═══════════ */
+function authLayout(inner) {
+  root.innerHTML = `<div class="flex min-h-full flex-col items-center justify-center bg-gradient-to-b from-indigo-50/60 to-slate-50 px-4 py-10">
+    <div class="w-full max-w-md">
+      <div class="mb-8 flex flex-col items-center text-center">
+        <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/25">${ico('finger', 'h-6 w-6')}</div>
+        <h1 class="mt-4 text-xl font-semibold tracking-tight text-slate-900">${APP_NAME}</h1>
+        <p class="mt-1 text-sm text-slate-500">Pengesahan identiti dengan cap jari / Face ID</p>
+      </div>
+      <div class="${C.card} p-6 sm:p-8">${inner}</div>
+      <p class="mt-6 flex items-center justify-center gap-1.5 text-center text-xs text-slate-400">${ico('shield', 'h-3.5 w-3.5')}Kunci peribadi kekal dalam peranti anda</p>
+    </div></div>`;
+}
+const alertBox = (id) => `<div id="${id}" class="mt-4 hidden rounded-lg px-3 py-2.5 text-sm"></div>`;
+function showAlert(id, text, ok) {
+  const el = $('#' + id); if (!el) return;
+  el.textContent = text || ''; el.classList.toggle('hidden', !text);
+  el.className = el.className.replace(/bg-\S+|text-(rose|emerald)-\S+|ring-\S+/g, '') + (ok ? ' bg-emerald-50 text-emerald-700' : ' bg-rose-50 text-rose-700');
+}
+
+function renderUnsupported() {
+  authLayout(`<div class="text-center"><div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-50 text-amber-600">${ico('phone', 'h-6 w-6')}</div>
+    <h2 class="mt-4 text-lg font-semibold">Peranti tidak disokong</h2>
+    <p class="mt-2 text-sm text-slate-500">Browser ini tidak menyokong cap jari / Face ID melalui passkey. Gunakan Chrome (Android) atau Safari (iPhone) terkini, dan pastikan kunci skrin serta biometrik telah ditetapkan.</p></div>`);
+}
+
+/* ═══════════ Google Sign-In (SSO) ═══════════ */
+let gisLoad = null, gisInit = false, gisHandler = null;
+function loadGis() {
+  if (!S.cfg.googleClientId) return Promise.resolve(false);
+  if (!gisLoad) gisLoad = new Promise(res => {
+    const sc = document.createElement('script');
+    sc.src = 'https://accounts.google.com/gsi/client'; sc.async = true;
+    sc.onload = () => res(true); sc.onerror = () => res(false);
+    document.head.appendChild(sc);
+  });
+  return gisLoad;
+}
+/** Papar butang Google dalam elemen `el`. handler(idToken) dipanggil selepas pengguna memilih akaun. */
+async function mountGoogle(el, handler, { oneTap = false, text = 'continue_with' } = {}) {
+  if (!el || !(await loadGis()) || !window.google) return false;
+  gisHandler = handler;
+  if (!gisInit) {
+    google.accounts.id.initialize({ client_id: S.cfg.googleClientId, callback: r => gisHandler && gisHandler(r.credential),
+      auto_select: true, use_fedcm_for_prompt: true, context: 'signin', itp_support: true });
+    gisInit = true;
+  }
+  google.accounts.id.renderButton(el, { theme: 'outline', size: 'large', shape: 'pill', text, logo_alignment: 'center',
+    width: Math.min(Math.max(el.offsetWidth, 240), 400), locale: 'ms' });
+  if (oneTap) google.accounts.id.prompt();   // "Teruskan sebagai …" jika pengguna sudah log masuk Google
+  return true;
+}
+
+/* ═══════════ Log masuk ═══════════ */
+function renderLogin(msg) {
+  const g = !!S.cfg.googleClientId;
+  authLayout(`<h2 class="text-lg font-semibold text-slate-900">Log masuk</h2>
+    <p class="mt-1 text-sm text-slate-500">${g ? 'Pilih akaun Google anda, kemudian sahkan dengan cap jari.' : 'Sahkan identiti anda dengan cap jari atau Face ID.'}</p>
+    <div id="ssoHello" class="mt-5 hidden"></div>
+    ${g ? `<div id="gBtn" class="mt-6 flex min-h-[44px] w-full justify-center"></div>
+      <div class="my-5 flex items-center gap-3 text-xs text-slate-400"><span class="h-px flex-1 bg-slate-200"></span>atau<span class="h-px flex-1 bg-slate-200"></span></div>`
+      : '<div class="mt-6"></div>'}
+    <button id="fpBtn" class="${C.btn} ${g ? C.secondary : C.primary} w-full py-3">${ico('finger')}Log masuk dengan cap jari</button>
+    <p class="mt-2 text-center text-xs text-slate-400">Tak perlu taip apa-apa — pilih akaun anda pada telefon</p>
+    <details class="group mt-5 rounded-xl ring-1 ring-slate-200">
+      <summary class="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-medium text-slate-600">
+        <span class="flex items-center gap-2">${ico('mail', 'h-4 w-4 text-slate-400')}Log masuk dengan emel</span>
+        <span class="text-slate-400 transition group-open:rotate-90">›</span></summary>
+      <form id="emailForm" class="space-y-3 px-4 pb-4">
+        <input id="lgEmail" type="email" class="${C.input}" autocomplete="username webauthn" placeholder="nama@organisasi.gov.my" required value="${esc(store.get('lastEmail') || '')}">
+        <button class="${C.btn} ${C.secondary} w-full">${ico('finger', 'h-4 w-4')}Teruskan dengan cap jari</button>
+      </form></details>
+    ${alertBox('lgMsg')}
+    <div class="mt-6 space-y-3 border-t border-slate-100 pt-5 text-center">
+      <button id="pwBtn" class="inline-flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:text-indigo-500">${ico('key', 'h-4 w-4')}Log masuk admin dengan kata laluan</button>
+      <p class="text-xs text-slate-500">Belum mendaftar? Gunakan link pendaftaran yang dihantar oleh pentadbir ke emel anda.</p></div>`);
+  if (msg) showAlert('lgMsg', msg);
+
+  setupFastLogin();
+  $('#emailForm').onsubmit = e => { e.preventDefault(); doLogin({ login: $('#lgEmail').value.trim() }, $('#emailForm button')); };
+  $('#pwBtn').onclick = adminPwLogin;
+  if (g) mountGoogle($('#gBtn'), onGoogleLogin, { oneTap: true });
+}
+
+/** SSO: Google beri emel → semak dalam Sheet → terus minta cap jari */
+async function onGoogleLogin(idToken) {
+  showAlert('lgMsg');
+  const hello = $('#ssoHello');
+  hello.className = 'mt-5 flex items-center gap-3 rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200';
+  hello.innerHTML = `<div class="skeleton h-9 w-9 rounded-full"></div><div class="flex-1 space-y-2"><div class="skeleton h-3 w-32 rounded"></div><div class="skeleton h-3 w-44 rounded"></div></div>`;
+  try {
+    const r = await api('ssoCheck', { idToken });
+    if (!r.found) {
+      hello.classList.add('hidden');
+      return showAlert('lgMsg', `Emel ${r.email} tiada dalam sistem. Hubungi pentadbir untuk didaftarkan.`);
+    }
+    hello.innerHTML = `${avatar(r.name)}<div class="min-w-0"><p class="truncate text-sm font-medium text-slate-900">Hai, ${esc(r.name)}</p>
+      <p class="truncate text-xs text-slate-500">${esc(r.email)} · ${esc(r.staffId)}</p></div><span class="ml-auto text-emerald-600">${ico('check')}</span>`;
+    store.set('lastEmail', r.email);
+    if (!r.registered) {
+      return showAlert('lgMsg', 'Akaun anda belum mendaftar cap jari. Semak emel untuk link pendaftaran' +
+        (r.role === 'ADMIN' ? ', atau log masuk admin dengan kata laluan di bawah.' : ', atau minta pentadbir menghantarnya semula.'));
+    }
+    await doLogin({ idToken });                 // kotak cap jari muncul serta-merta
+  } catch (e) { hello.classList.add('hidden'); showAlert('lgMsg', e.message); }
+}
+
+async function doLogin(params, btnEl) {
+  showAlert('lgMsg');
+  const run = async () => {
+    try { finishLogin(await biometric('LOGIN', params)); }
+    catch (e) { if (e.message !== 'Dibatalkan.') showAlert('lgMsg', e.message); }
+  };
+  return btnEl ? busy(btnEl, run) : run();
+}
+
+function finishLogin(out) {
+  store.set('session', out.sessionToken, true);
+  S.token = out.sessionToken; S.me = out.staff;
+  if (location.hash && location.hash !== '#/home') location.hash = '#/home';
+  renderShell();
+}
+
+/** Log masuk admin dengan emel + kata laluan */
+function adminPwLogin() {
+  const m = openModal(`${modalHead('Log masuk admin', 'Guna emel dan kata laluan admin')}
+    <form id="pwf" class="space-y-4 px-6 py-5">
+      <div><label class="${C.label}">Emel</label><input name="login" type="email" class="${C.input}" required autocomplete="username" value="${esc(store.get('lastEmail') || '')}"></div>
+      <div><label class="${C.label}">Kata laluan</label><input name="pw" type="password" class="${C.input}" required autocomplete="current-password"></div>
+      <div id="pwErr" class="hidden rounded-lg bg-rose-50 px-3 py-2.5 text-sm text-rose-700"></div>
+    </form>
+    ${modalFoot(btn('secondary', 'Batal', 'data-close') + `<button type="submit" form="pwf" class="${C.btn} ${C.primary}">Log masuk</button>`)}`, { size: 'sm' });
+  m.q('#pwf').onsubmit = e => {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    busy(m.q('[form=pwf]'), async () => {
+      try {
+        const out = await api('adminPasswordLogin', { login: f.get('login').trim(), password: f.get('pw') });
+        store.set('lastEmail', f.get('login').trim());
+        m.close(); finishLogin(out);
+      } catch (err) { const el = m.q('#pwErr'); el.textContent = err.message; el.classList.remove('hidden'); }
+    });
+  };
+}
+
+/* ═══════════ Phase 1: Pendaftaran (sekali sahaja) ═══════════ */
+const REG = { step: 1, email: '', masked: '', opts: null };
+function renderRegister() {
+  const steps = ['Emel', 'Pengesahan', 'Cap jari'];
+  const bar = REG.step <= 3 ? `<ol class="mb-6 flex items-center gap-2">${steps.map((t, i) => {
+      const n = i + 1, done = n < REG.step, cur = n === REG.step;
+      return `<li class="flex flex-1 items-center gap-2"><span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${done ? 'bg-indigo-600 text-white' : cur ? 'bg-indigo-50 text-indigo-700 ring-2 ring-indigo-600' : 'bg-slate-100 text-slate-400'}">${done ? ico('check', 'h-4 w-4') : n}</span>
+        <span class="hidden text-xs font-medium sm:inline ${cur ? 'text-slate-900' : 'text-slate-400'}">${t}</span>${n < 3 ? '<span class="h-px flex-1 bg-slate-200"></span>' : ''}</li>`; }).join('')}</ol>` : '';
+  const g = !!S.cfg.googleClientId;
+
+  let body = '';
+  if (REG.step === 1) body = `<h2 class="text-lg font-semibold">Pendaftaran Digital ID</h2>
+    <p class="mt-1 text-sm text-slate-500">Sahkan emel rasmi anda untuk mula mendaftar.</p>
+    ${g ? `<div id="gReg" class="mt-6 flex min-h-[44px] w-full justify-center"></div>
+      <p class="mt-2 text-center text-xs text-slate-400">Paling cepat — tiada kod perlu ditaip</p>
+      <div class="my-5 flex items-center gap-3 text-xs text-slate-400"><span class="h-px flex-1 bg-slate-200"></span>atau guna kod emel<span class="h-px flex-1 bg-slate-200"></span></div>` : ''}
+    <form id="rf" class="${g ? '' : 'mt-6'} space-y-4"><div><label class="${C.label}">Emel rasmi</label>
+      <input id="rgEmail" type="email" class="${C.input}" placeholder="nama@organisasi.gov.my" autocomplete="email" required value="${esc(REG.email)}"></div>
+      <button class="${C.btn} ${g ? C.secondary : C.primary} w-full py-3">${ico('mail')}Hantar kod pengesahan</button></form>`;
+  if (REG.step === 2) body = `<h2 class="text-lg font-semibold">Masukkan kod</h2>
+    <p class="mt-1 text-sm text-slate-500">Kod 6 digit telah dihantar ke <b class="text-slate-700">${esc(REG.masked)}</b>.</p>
+    <form id="rf" class="mt-6 space-y-4"><div><label class="${C.label}">Kod pengesahan</label>
+      <input id="rgOtp" class="${C.input} text-center font-mono text-2xl tracking-[.5em]" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="······" required></div>
+      <button class="${C.btn} ${C.primary} w-full py-3">Sahkan kod</button></form>
+    <button id="rgResend" class="${C.btn} ${C.ghost} mt-2 w-full">Hantar semula kod</button>`;
+  if (REG.step === 3) body = `<div class="text-center"><div class="fp-pulse mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-indigo-50 text-indigo-600">${ico('finger', 'h-10 w-10')}</div>
+    <h2 class="mt-5 text-lg font-semibold">Daftar cap jari / Face ID</h2>
+    <p class="mt-2 text-sm text-slate-500">Hai <b class="text-slate-700">${esc(REG.opts.user.displayName)}</b>. Tekan butang di bawah dan imbas cap jari atau Face ID apabila telefon meminta.</p>
+    <button id="rgPasskey" class="${C.btn} ${C.primary} mt-6 w-full py-3">${ico('finger')}Register Biometric / Passkey</button></div>`;
+  if (REG.step === 4) body = `<div class="text-center"><div class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">${ico('check', 'h-8 w-8')}</div>
+    <h2 class="mt-5 text-lg font-semibold">Pendaftaran berjaya</h2>
+    <p class="mt-2 text-sm text-slate-500">Cap jari anda telah dikaitkan dengan <b class="text-slate-700">${esc(REG.email)}</b>. Mulai sekarang, log masuk hanya perlukan cap jari — tiada kata laluan.</p>
+    <button id="rgDone" class="${C.btn} ${C.primary} mt-6 w-full py-3">Log masuk sekarang</button></div>`;
+  authLayout(bar + body + alertBox('rgMsg'));
+
+  const sendOtp = b => busy(b, async () => {
+    try { const r = await api('regStart', { token: regToken, email: REG.email }); REG.masked = r.maskedEmail;
+      const resend = REG.step === 2; REG.step = 2; renderRegister(); if (resend) showAlert('rgMsg', 'Kod baharu telah dihantar.', true);
+    } catch (e) { showAlert('rgMsg', e.message); }
+  });
+  if (REG.step === 1) {
+    $('#rf').onsubmit = e => { e.preventDefault(); REG.email = $('#rgEmail').value.trim().toLowerCase(); sendOtp($('#rf button')); };
+    if (g) mountGoogle($('#gReg'), async idToken => {
+      showAlert('rgMsg');
+      try { REG.opts = await api('regVerifyGoogle', { token: regToken, idToken }); REG.email = REG.opts.user.name; REG.step = 3; renderRegister(); }
+      catch (err) { showAlert('rgMsg', err.message); }
+    }, { text: 'continue_with' });
+  }
+  if (REG.step === 2) {
+    $('#rgResend').onclick = e => sendOtp(e.currentTarget);
+    $('#rf').onsubmit = e => { e.preventDefault(); busy($('#rf button'), async () => {
+      try { REG.opts = await api('regVerifyOtp', { token: regToken, email: REG.email, otp: $('#rgOtp').value }); REG.step = 3; renderRegister(); }
+      catch (err) { showAlert('rgMsg', err.message); } }); };
+  }
+  if (REG.step === 3) $('#rgPasskey').onclick = async e => {
+    const b = e.currentTarget, o = REG.opts;
+    showAlert('rgMsg');
+    let cred;
+    try {   // dipanggil terus dari klik — keperluan "user gesture" Safari iOS
+      cred = await navigator.credentials.create({ publicKey: {
+        challenge: b64u.dec(o.challenge), rp: o.rp,
+        user: { id: b64u.dec(o.user.id), name: o.user.name, displayName: o.user.displayName },
+        pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+        // residentKey "required" → passkey boleh dicari, jadi log masuk tidak perlu taip ID/emel
+        authenticatorSelection: { authenticatorAttachment: 'platform', residentKey: 'required', requireResidentKey: true, userVerification: 'required' },
+        attestation: 'none', timeout: 60000,
+        excludeCredentials: o.excludeCredentials.map(c => ({ type: 'public-key', id: b64u.dec(c.id) }))
+      }});
+    } catch (err) { return showAlert('rgMsg', webauthnError(err)); }
+    const r = cred.response;
+    if (!r.getPublicKey || !r.getAuthenticatorData) return showAlert('rgMsg', 'Browser terlalu lama. Sila kemas kini browser anda.');
+    busy(b, async () => {
+      try {
+        await api('regFinish', { token: regToken, email: REG.email, deviceLabel: deviceLabel(), credential: {
+          id: cred.id, rawId: b64u.enc(cred.rawId), clientDataJSON: b64u.enc(r.clientDataJSON),
+          authenticatorData: b64u.enc(r.getAuthenticatorData()), publicKey: b64u.enc(r.getPublicKey()),
+          publicKeyAlg: r.getPublicKeyAlgorithm(), transports: r.getTransports ? r.getTransports() : [] } });
+        store.set('lastEmail', REG.email); REG.step = 4; renderRegister();
+      } catch (err) { showAlert('rgMsg', err.message); }
+    });
+  };
+  if (REG.step === 4) $('#rgDone').onclick = () => { history.replaceState(null, '', location.pathname); renderLogin(); };
+}
+
+/* ═══════════ Rangka aplikasi (sidebar + kandungan) ═══════════ */
+const NAV = [
+  { id: 'home', label: 'Dashboard', icon: 'home' },
+  { id: 'mine', label: 'Rekod Kehadiran', icon: 'calendar' },
+  { id: 'face', label: 'Wajah Saya', icon: 'face' },
+  { id: 'attendance', label: 'Kehadiran', icon: 'clock', admin: true },
+  { id: 'faces', label: 'Wajah & Kiosk', icon: 'scan', admin: true },
+  { id: 'users', label: 'Pengguna', icon: 'users', admin: true },
+  { id: 'docs', label: 'Dokumen', icon: 'doc', admin: true },
+  { id: 'signatures', label: 'Tandatangan', icon: 'pen', admin: true },
+  { id: 'audit', label: 'Log Audit', icon: 'list', admin: true },
+  { id: 'settings', label: 'Tetapan', icon: 'cog', admin: true }
+];
+const isAdmin = () => S.me && S.me.role === 'ADMIN';
+function currentRoute() {
+  const r = (location.hash.match(/^#\/(\w+)/) || [])[1] || 'home';
+  const n = NAV.find(x => x.id === r);
+  return n && (!n.admin || isAdmin()) ? r : 'home';
+}
+
+function navHtml() {
+  const r = currentRoute();
+  const item = n => `<a href="#/${n.id}" class="group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${r === n.id ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}">
+      <span class="${r === n.id ? 'text-indigo-600' : 'text-slate-400 group-hover:text-slate-500'}">${ico(n.icon)}</span>${n.label}</a>`;
+  const admin = NAV.filter(n => n.admin);
+  return `<nav class="flex flex-1 flex-col gap-1">
+      ${NAV.filter(n => !n.admin).map(item).join('')}
+      ${isAdmin() ? `<p class="mt-6 px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-slate-400">Pentadbiran</p>${admin.map(item).join('')}` : ''}
+    </nav>
+    <div class="mt-6 flex items-center gap-3 border-t border-slate-100 pt-4">
+      ${avatar(S.me.name)}
+      <div class="min-w-0 flex-1"><p class="truncate text-sm font-medium text-slate-900">${esc(S.me.name)}</p>
+        <p class="truncate text-xs text-slate-500">${esc(S.me.id)} · ${isAdmin() ? 'Admin' : 'Staf'}</p></div>
+      <button data-logout class="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600" title="Log keluar">${ico('logout')}</button>
+    </div>`;
+}
+const brand = `<div class="flex items-center gap-2.5"><div class="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white">${ico('finger', 'h-4 w-4')}</div><span class="text-sm font-semibold tracking-tight text-slate-900">${APP_NAME}</span></div>`;
+
+function renderShell() {
+  root.innerHTML = `
+    <aside class="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-slate-200 bg-white px-4 py-5 lg:flex">
+      <div class="mb-8 px-2">${brand}</div><div id="navDesk" class="flex flex-1 flex-col"></div></aside>
+    <div id="drawer" class="fixed inset-0 z-40 hidden lg:hidden">
+      <div data-dclose class="absolute inset-0 bg-slate-900/40"></div>
+      <aside class="relative flex h-full w-72 max-w-[85%] flex-col bg-white px-4 py-5 shadow-xl">
+        <div class="mb-8 flex items-center justify-between px-2">${brand}<button data-dclose class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">${ico('x')}</button></div>
+        <div id="navMob" class="flex flex-1 flex-col"></div></aside></div>
+    <div class="lg:pl-64">
+      <header class="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-slate-200 bg-white/90 px-4 backdrop-blur lg:hidden">
+        <button data-dopen class="-ml-1 rounded-lg p-2 text-slate-600 hover:bg-slate-100">${ico('menu')}</button>${brand}</header>
+      <main id="main" class="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8 lg:py-10"></main>
+    </div>`;
+  const drawer = $('#drawer');
+  $('[data-dopen]').onclick = () => drawer.classList.remove('hidden');
+  $$('[data-dclose]').forEach(b => b.onclick = () => drawer.classList.add('hidden'));
+  renderPage();
+}
+
+function paintNav() {
+  ['#navDesk', '#navMob'].forEach(s => { const el = $(s); if (el) el.innerHTML = navHtml(); });
+  $$('[data-logout]').forEach(b => b.onclick = async () => {
+    if (!(await confirmDialog({ title: 'Log keluar?', message: 'Anda perlu mengimbas cap jari untuk log masuk semula.', confirmText: 'Log keluar' }))) return;
+    try { await api('logout', { sessionToken: S.token }); } catch (e) {}
+    logout();
+  });
+  $$('#navMob a').forEach(a => a.onclick = () => $('#drawer').classList.add('hidden'));
+}
+
+function logout(msg) {
+  try { if (window.google && google.accounts) google.accounts.id.disableAutoSelect(); } catch (e) {}
+  store.del('session', true); S.token = null; S.me = null; S.users = null;
+  history.replaceState(null, '', location.pathname);
+  renderLogin(msg);
+}
+
+const pageHead = (title, sub, actions = '') => `<div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+  <div><h1 class="text-2xl font-semibold tracking-tight text-slate-900">${title}</h1>${sub ? `<p class="mt-1 text-sm text-slate-500">${sub}</p>` : ''}</div>
+  ${actions ? `<div class="flex flex-wrap gap-2">${actions}</div>` : ''}</div>`;
+const skeleton = () => `<div class="space-y-4"><div class="skeleton h-8 w-56 rounded-lg"></div><div class="skeleton h-4 w-80 rounded"></div>
+  <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">${'<div class="skeleton h-28 rounded-2xl"></div>'.repeat(4)}</div><div class="skeleton h-72 rounded-2xl"></div></div>`;
+const emptyState = (icon, title, sub) => `<div class="flex flex-col items-center px-6 py-14 text-center">
+  <div class="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400">${ico(icon, 'h-6 w-6')}</div>
+  <p class="mt-4 text-sm font-medium text-slate-900">${title}</p>${sub ? `<p class="mt-1 text-sm text-slate-500">${sub}</p>` : ''}</div>`;
+const searchBox = (id, ph) => `<div class="relative flex-1"><span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400">${ico('search', 'h-4 w-4')}</span>
+  <input id="${id}" class="${C.input} pl-9" placeholder="${ph}"></div>`;
+const selectBox = (id, opts) => `<select id="${id}" class="${C.input} sm:w-44">${opts.map(o => `<option value="${o[0]}">${o[1]}</option>`).join('')}</select>`;
+
+async function renderPage() {
+  closeMenu();
+  modalStack.slice().forEach(m => m.close(true));
+  paintNav();
+  const main = $('#main'); if (!main) return;
+  const seq = ++S.seq;
+  main.innerHTML = skeleton();
+  window.scrollTo(0, 0);
+  const view = { live: () => seq === S.seq, set: html => { if (seq === S.seq) main.innerHTML = html; return seq === S.seq; } };
+  try { await PAGES[currentRoute()](view); }
+  catch (e) { if (S.me) view.set(`<div class="${C.card}">${emptyState('x', 'Gagal memuatkan', esc(e.message))}</div>`); }
+}
+window.addEventListener('hashchange', () => { if (S.me) renderPage(); });
+
+/* ═══════════ HALAMAN: Dashboard ═══════════ */
+const PAGES = {};
+PAGES.home = async view => {
+  const [me, ov] = await Promise.all([authed('me'), isAdmin() ? authed('adminOverview') : Promise.resolve(null)]);
+  S.me = me.staff; paintNav();
+  const pending = me.docs.filter(d => !d.signed);
+
+  const stat = (label, value, sub, icon) => `<div class="${C.card} p-4 sm:p-5"><div class="flex items-center justify-between gap-2">
+      <p class="text-xs font-medium text-slate-500 sm:text-sm">${label}</p><span class="hidden text-slate-300 sm:block">${ico(icon)}</span></div>
+      <p class="mt-2 text-2xl font-semibold tracking-tight text-slate-900 sm:mt-3 sm:text-3xl">${value}</p>${sub ? `<p class="mt-1 text-xs text-slate-500">${sub}</p>` : ''}</div>`;
+
+  const adminStats = ov ? `<div class="mb-6 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+      ${stat('Pengguna berdaftar', ov.users.active, `daripada ${ov.users.total} pengguna`, 'users')}
+      ${stat('Hadir hari ini', ov.presentToday, ov.users.active ? Math.round(ov.presentToday / ov.users.active * 100) + '% pengguna berdaftar' : '', 'clock')}
+      ${stat('Dokumen dibuka', ov.openDocs, `${ov.signaturesToday} tandatangan hari ini`, 'doc')}
+      ${stat('Menunggu pendaftaran', ov.users.invited + ov.users.pending, `${ov.users.invited} dijemput · ${ov.users.pending} belum dijemput`, 'mail')}</div>` : '';
+
+  const attCard = attendanceCard(me.today);
+
+  const docCard = `<section class="${C.card}">
+      <div class="flex items-center justify-between border-b border-slate-100 px-5 py-4 sm:px-6">
+        <div><h2 class="text-base font-semibold text-slate-900">Dokumen untuk ditandatangani</h2>
+        <p class="mt-0.5 text-sm text-slate-500">${pending.length ? pending.length + ' menunggu tandatangan anda' : 'Semua dokumen telah ditandatangani'}</p></div></div>
+      ${me.docs.length ? `<ul class="divide-y divide-slate-100">${me.docs.map(d => `
+        <li class="flex items-center gap-4 px-5 py-4 sm:px-6">
+          <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${d.signed ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}">${ico(d.signed ? 'check' : 'doc')}</span>
+          <div class="min-w-0 flex-1"><p class="truncate text-sm font-medium text-slate-900">${esc(d.title)}</p>
+            <p class="truncate text-xs text-slate-500">${d.signed ? 'Ditandatangani ' + esc(d.signedAt.slice(0, 16)) + ' · ' + esc(d.receiptId) : esc(d.id)}</p></div>
+          ${d.signed ? badge('SIGNED') : btn('primary', ico('pen', 'h-4 w-4') + '<span class="hidden sm:inline">Tandatangan</span>', `data-sign="${esc(d.id)}"`)}
+        </li>`).join('')}</ul>` : emptyState('doc', 'Tiada dokumen', 'Dokumen yang perlu anda tandatangani akan dipaparkan di sini.')}
+    </section>`;
+
+  let adminCol = '';
+  if (ov) {
+    const max = Math.max(1, ...ov.attendance7d.map(d => d.count));
+    const chart = `<div class="relative mt-6 flex h-44 items-end gap-2 border-b border-slate-200 sm:gap-3" role="img" aria-label="Kehadiran 7 hari">
+      ${ov.attendance7d.map((d, i) => { const h = Math.round(d.count / max * 100), isToday = i === 6;
+        const day = DAYS[new Date(d.date + 'T00:00:00').getDay()];
+        return `<div class="group relative flex h-full flex-1 flex-col items-center justify-end">
+          ${isToday ? `<span class="mb-1 text-xs font-semibold tabular-nums text-slate-700">${d.count}</span>` : ''}
+          <div class="w-full max-w-[28px] rounded-t ${isToday ? 'bg-indigo-600' : 'bg-indigo-300'} transition group-hover:bg-indigo-500" style="height:${d.count ? Math.max(h, 3) : 0}%"></div>
+          <div class="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1.5 text-xs text-white shadow group-hover:block">
+            ${day} ${esc(d.date.slice(8))}/${esc(d.date.slice(5, 7))} · <b>${d.count}</b> hadir</div>
+          <span class="absolute -bottom-6 text-[11px] ${isToday ? 'font-semibold text-slate-700' : 'text-slate-400'}">${day}</span></div>`; }).join('')}</div>`;
+    adminCol = `<section class="${C.card} p-5 sm:p-6">
+        <h2 class="text-base font-semibold text-slate-900">Kehadiran 7 hari</h2><p class="mt-0.5 text-sm text-slate-500">Pengguna unik yang daftar masuk</p>
+        ${chart}<div class="h-6"></div></section>
+      <section class="${C.card}">
+        <div class="flex items-center justify-between border-b border-slate-100 px-5 py-4 sm:px-6"><h2 class="text-base font-semibold text-slate-900">Aktiviti terkini</h2>
+          <a href="#/audit" class="text-sm font-medium text-indigo-600 hover:text-indigo-500">Lihat semua</a></div>
+        ${ov.recent.length ? `<ul class="divide-y divide-slate-100">${ov.recent.map(a => `<li class="flex items-start gap-3 px-5 py-3 sm:px-6">
+          <span class="mt-1.5 h-2 w-2 shrink-0 rounded-full ${evDanger(a.event) ? 'bg-rose-500' : 'bg-slate-300'}"></span>
+          <div class="min-w-0 flex-1"><p class="text-sm text-slate-700"><span class="font-medium text-slate-900">${esc(a.staffId || 'Sistem')}</span> · ${esc(evLabel(a.event))}</p>
+          <p class="text-xs text-slate-400">${esc(a.time)}</p></div></li>`).join('')}</ul>` : emptyState('list', 'Belum ada aktiviti')}
+      </section>`;
+  }
+
+  if (!view.set(`${pageHead(`${greeting()}, ${esc(S.me.name.split(' ')[0])}`, esc(fmtDateLong()))}${adminStats}
+    <div class="grid grid-cols-1 gap-6 ${ov ? 'lg:grid-cols-5' : 'lg:grid-cols-2'}">
+      <div class="min-w-0 space-y-6 ${ov ? 'lg:col-span-3' : 'lg:col-span-2 lg:grid lg:grid-cols-2 lg:gap-6 lg:space-y-0'}">${attCard}${docCard}</div>
+      ${ov ? `<div class="min-w-0 space-y-6 lg:col-span-2">${adminCol}</div>` : ''}</div>`)) return;
+
+  $$('[data-att]').forEach(b => b.onclick = () => clockFlow(b.dataset.att, b));
+  startLiveClock();
+  $$('[data-sign]').forEach(b => b.onclick = () => busy(b, async () => {
+    try {
+      const out = await biometric('SIGN', { sessionToken: S.token, docId: b.dataset.sign });
+      toast(`“${out.title}” ditandatangani · ${out.receiptId}`); renderPage();
+    } catch (e) { if (e.message !== 'Dibatalkan.') toast(e.message, 'err'); }
+  }));
+};
+/* ═══════════ Kehadiran: kad dashboard, GPS, tugas luar ═══════════ */
+const fmtMin = m => !m ? '—' : m < 60 ? `${m}m` : `${Math.floor(m / 60)}j ${String(m % 60).padStart(2, '0')}m`;
+const fmtDist = d => d >= 1000 ? (d / 1000).toFixed(1) + ' km' : Math.round(d) + ' m';
+const nowKL = () => new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Kuala_Lumpur' });
+function stBadges(r) {
+  const list = [r.status];
+  (r.flags || []).forEach(f => { if (f !== r.status && ['LEWAT', 'PULANG_AWAL', 'TIADA_KELUAR', 'HARI_REHAT'].includes(f)) list.push(f); });
+  return list.map(x => badge(x)).join(' ') + (r.outstation ? ' ' + badge('LUAR') : '') + (r.pendingReview ? ' ' + badge('MENUNGGU') : '');
+}
+
+function attendanceCard(t) {
+  const st = t.status, s = t.sched;
+  const detail = [];
+  if (st.in) detail.push(`Masuk <b class="text-slate-900 tabular-nums">${esc(st.in)}</b>`);
+  if (st.out) detail.push(`Keluar <b class="text-slate-900 tabular-nums">${esc(st.out)}</b>`);
+  if (st.late) detail.push(`<span class="text-amber-700">lewat ${fmtMin(st.late)}</span>`);
+  if (st.worked) detail.push(`${fmtMin(st.worked)} bekerja`);
+  const hint = st.status === 'BEKERJA' && st.requiredOut ? `Boleh daftar keluar selepas <b class="tabular-nums">${esc(st.requiredOut)}</b>`
+    : st.status === 'BELUM' ? 'Anda belum daftar masuk' : st.status === 'TIDAK_HADIR' ? 'Tiada rekod masuk hari ini' : '';
+  return `<section class="${C.card} p-5 sm:p-6">
+    <div class="flex items-start justify-between gap-4">
+      <div><h2 class="text-base font-semibold text-slate-900">Kehadiran ${t.date === todayKL() ? 'hari ini' : esc(t.date)}</h2>
+        <p class="mt-1 flex items-center gap-1.5 text-sm text-slate-500">${ico('calendar', 'h-4 w-4')}${esc(s.label)}${s.text && !s.rest ? ' · ' + esc(s.text) : ''}</p></div>
+      <p id="liveClock" class="text-2xl font-semibold tabular-nums tracking-tight text-slate-900">${nowKL().slice(0, 5)}</p></div>
+    <div class="mt-5 rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200/70">
+      <div class="flex flex-wrap items-center gap-1.5">${stBadges(st)}</div>
+      ${detail.length ? `<p class="mt-2 text-sm text-slate-600">${detail.join(' · ')}</p>` : ''}
+      ${hint ? `<p class="mt-1 text-sm text-slate-500">${hint}</p>` : ''}</div>
+    <div class="mt-4 grid grid-cols-2 gap-3">
+      ${btn(t.canIn ? 'primary' : 'secondary', ico('arrowIn') + 'Daftar Masuk', `data-att="IN" ${t.canIn ? '' : 'disabled'}`)}
+      ${btn(!t.canIn && t.canOut ? 'primary' : 'secondary', ico('arrowOut') + 'Daftar Keluar', `data-att="OUT" ${t.canOut ? '' : 'disabled'}`)}</div>
+    <div class="mt-4 flex items-center justify-between gap-3 text-xs text-slate-500">
+      <span class="flex min-w-0 items-center gap-1.5">${ico('pin', 'h-3.5 w-3.5 shrink-0')}<span class="truncate">${t.geofence.length ? 'Lokasi: ' + esc(t.geofence.join(', ')) : 'Geofence belum ditetapkan'}</span></span>
+      <a href="#/mine" class="shrink-0 font-medium text-indigo-600 hover:text-indigo-500">Rekod bulanan →</a></div>
+  </section>`;
+}
+
+let clockTimer = null;
+function startLiveClock() {
+  clearInterval(clockTimer);
+  clockTimer = setInterval(() => { const el = $('#liveClock'); if (!el) return clearInterval(clockTimer); el.textContent = nowKL().slice(0, 5); }, 1000);
+}
+
+/** Dapatkan lokasi GPS (ketepatan tinggi). Pulangkan {lat,lng,acc} atau {geoError} */
+function getGeoFix() {
+  return new Promise(res => {
+    if (!navigator.geolocation) return res({ geoError: 'Browser tidak menyokong GPS' });
+    navigator.geolocation.getCurrentPosition(
+      p => res({ lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy }),
+      e => res({ geoError: e.code === 1 ? 'Akses lokasi ditolak' : e.code === 3 ? 'GPS tamat masa' : 'Lokasi tidak tersedia' }),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 });
+  });
+}
+
+/** Di luar radius → tanya sama ada tugas luar. Pulangkan catatan atau null */
+function outstationDialog(o) {
+  return new Promise(res => {
+    const m = openModal(`<div class="p-6">
+        <div class="flex gap-4"><div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-600">${ico('pin')}</div>
+          <div><h3 class="text-base font-semibold text-slate-900">Anda di luar kawasan pejabat</h3>
+          <p class="mt-1 text-sm text-slate-500">Anda berada kira-kira <b class="text-slate-700">${fmtDist(o.distance)}</b> dari ${esc(o.location)} (had ${o.radius} m).</p></div></div>
+        <form id="osf" class="mt-5 space-y-3">
+          <label class="${C.label}">Jika anda bertugas di luar, nyatakan tujuan / lokasi</label>
+          <textarea name="note" rows="3" minlength="5" maxlength="200" required class="${C.input}" placeholder="cth. Mesyuarat di JPA Putrajaya"></textarea>
+          <p class="text-xs text-slate-500">Rekod tugas luar akan disemak oleh admin.</p></form></div>
+      ${modalFoot(btn('secondary', 'Cuba lagi', 'data-close') + `<button type="submit" form="osf" class="${C.btn} ${C.primary}">${ico('brief', 'h-4 w-4')}Daftar sebagai Tugas Luar</button>`)}`,
+      { size: 'sm', onClose: () => res(null) });
+    m.q('#osf').onsubmit = e => { e.preventDefault(); const n = new FormData(e.target).get('note').trim(); m.close(); res(n); };
+  });
+}
+
+async function clockFlow(type, b) {
+  await busy(b, async () => {
+    try {
+      const geo = await getGeoFix();
+      let start = await authed('authStart', { purpose: 'ATTENDANCE', type, ...geo });
+      if (start.outside) {
+        const note = await outstationDialog(start);
+        if (!note) return;
+        start = await authed('authStart', { purpose: 'ATTENDANCE', type, ...geo, outstation: true, note });
+      }
+      const out = await biometric('ATTENDANCE', null, start);
+      toast(`${out.type === 'IN' ? 'Daftar masuk' : 'Daftar keluar'} direkod pada ${out.time.slice(11, 16)}${out.outstation ? ' (tugas luar)' : ''}`);
+      renderPage();
+    } catch (e) { if (e.message !== 'Dibatalkan.') toast(e.message, 'err'); }
+  });
+}
+
+/* ═══════════ HALAMAN: Pengguna (CRUD) ═══════════ */
+PAGES.users = async view => {
+  const [users, scheds, locs] = await Promise.all([authed('adminUsers'), authed('adminSchedules'), authed('adminLocations')]);
+  S.users = users; S.scheds = scheds; S.locs = locs;
+  if (!view.set(`${pageHead('Pengguna', `${users.length} pengguna · ${users.filter(u => u.status === 'ACTIVE').length} berdaftar`,
+      btn('primary', ico('plus') + 'Tambah pengguna', 'id="addUser"'))}
+    <div class="mb-4 flex flex-col gap-3 sm:flex-row">${searchBox('uq', 'Cari nama, Staff ID, emel, jabatan…')}
+      ${selectBox('uStatus', [['', 'Semua status'], ['ACTIVE', 'Aktif'], ['INVITED', 'Dijemput'], ['PENDING', 'Belum daftar'], ['DISABLED', 'Dinyahaktif']])}
+      ${selectBox('uRole', [['', 'Semua peranan'], ['ADMIN', 'Admin'], ['STAFF', 'Staf']])}</div>
+    <div class="${C.card} relative overflow-hidden"><div class="relative overflow-x-auto"><table class="min-w-full divide-y divide-slate-100">
+      <thead class="bg-slate-50/70"><tr><th class="${C.th}">Pengguna</th><th class="${C.th} hidden md:table-cell">Staff ID</th>
+        <th class="${C.th} hidden lg:table-cell">Jabatan</th><th class="${C.th}">Status</th><th class="${C.th} hidden md:table-cell">Peranti</th><th class="${C.th} w-12"><span class="sr-only">Tindakan</span></th></tr></thead>
+      <tbody id="uRows" class="divide-y divide-slate-100 bg-white"></tbody></table></div></div>`)) return;
+
+  const draw = () => {
+    const q = $('#uq').value.toLowerCase(), st = $('#uStatus').value, rl = $('#uRole').value;
+    const rows = users.filter(u => (!st || u.status === st) && (!rl || u.role === rl) &&
+      (!q || [u.id, u.name, u.email, u.dept].join(' ').toLowerCase().includes(q)));
+    $('#uRows').innerHTML = rows.length ? rows.map(u => `<tr class="cursor-pointer hover:bg-slate-50/70" data-u="${esc(u.id)}">
+      <td class="${C.td}"><div class="flex items-center gap-3"><span class="hidden sm:inline-flex">${avatar(u.name)}</span><div class="min-w-0 max-w-[10.5rem] sm:max-w-xs">
+        <p class="flex items-center gap-2 font-medium text-slate-900"><span class="truncate">${esc(u.name)}</span>${u.role === 'ADMIN' ? badge('ADMIN') : ''}</p>
+        <p class="truncate text-slate-500">${esc(u.email)}<span class="md:hidden"> · ${esc(u.id)}</span></p></div></div></td>
+      <td class="${C.td} hidden font-mono text-slate-600 md:table-cell">${esc(u.id)}</td>
+      <td class="${C.td} hidden text-slate-600 lg:table-cell">${esc(u.dept || '—')}<p class="text-xs text-slate-400">${esc(u.jadual === 'ROSTER' ? 'Roster syif' : ((scheds.find(j => j.code === u.jadual) || {}).name || 'Jadual lalai'))}</p></td>
+      <td class="${C.td}">${badge(u.status)}${u.status === 'INVITED' ? `<p class="mt-1 text-xs ${u.linkExpired ? 'text-rose-600' : 'text-slate-400'}">${u.linkExpired ? 'Link tamat tempoh' : 'Sah hingga ' + esc(u.linkExpiry)}</p>` : ''}</td>
+      <td class="${C.td} hidden text-slate-600 md:table-cell">${u.devices.length ? `<span class="inline-flex items-center gap-1.5">${ico('phone', 'h-4 w-4 text-slate-400')}${esc(u.devices.map(d => d.label).join(', '))}</span>` : '<span class="text-slate-400">—</span>'}</td>
+      <td class="${C.td} text-right"><button data-menu="${esc(u.id)}" class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Tindakan">${ico('dots')}</button></td></tr>`).join('')
+      : `<tr><td colspan="6">${emptyState('users', 'Tiada pengguna dijumpai', 'Cuba ubah carian atau tapisan.')}</td></tr>`;
+    $$('#uRows [data-u]').forEach(tr => tr.onclick = e => { if (!e.target.closest('[data-menu]')) userForm(users.find(u => u.id === tr.dataset.u)); });
+    $$('#uRows [data-menu]').forEach(b => b.onclick = e => { e.stopPropagation(); userMenu(b, users.find(u => u.id === b.dataset.menu)); });
+  };
+  ['uq', 'uStatus', 'uRole'].forEach(id => $('#' + id).oninput = draw);
+  $('#addUser').onclick = () => userForm(null);
+  draw();
+};
+
+function userMenu(anchor, u) {
+  const self = u.id === S.me.id;
+  openMenu(anchor, [
+    { label: 'Edit maklumat', icon: 'edit', onClick: () => userForm(u) },
+    { label: u.status === 'ACTIVE' ? 'Hantar link tambah peranti' : u.status === 'INVITED' ? 'Hantar semula link' : 'Hantar link pendaftaran',
+      icon: 'mail', disabled: u.status === 'DISABLED', onClick: () => userAction(u, 'SEND_LINK') },
+    { label: 'Batal semua passkey', icon: 'key', disabled: self || !u.devices.length, onClick: () => userAction(u, 'REVOKE') },
+    u.status === 'DISABLED' ? { label: 'Aktifkan semula', icon: 'play', onClick: () => userAction(u, 'ENABLE') }
+      : { label: 'Nyahaktifkan', icon: 'ban', disabled: self, onClick: () => userAction(u, 'DISABLE') },
+    '-',
+    { label: 'Padam pengguna', icon: 'trash', danger: true, disabled: self, onClick: () => userAction(u, 'DELETE') }
+  ]);
+}
+
+const CONFIRMS = {
+  REVOKE: u => ({ title: 'Batal semua passkey?', message: `${u.name} tidak akan dapat log masuk sehingga mendaftar semula. Gunakan jika telefon hilang atau ditukar.`, confirmText: 'Batal passkey', danger: true }),
+  DISABLE: u => ({ title: 'Nyahaktifkan pengguna?', message: `${u.name} tidak boleh log masuk, merekod kehadiran atau menandatangani. Rekod sedia ada dikekalkan.`, confirmText: 'Nyahaktifkan', danger: true }),
+  DELETE: u => ({ title: 'Padam pengguna?', message: `Akaun ${u.name} (${u.id}) akan dipadam dan passkey dibatalkan. Rekod kehadiran & tandatangan lama dikekalkan untuk audit. Tindakan ini tidak boleh dibatalkan.`, confirmText: 'Padam', danger: true })
+};
+async function userAction(u, op) {
+  if (CONFIRMS[op] && !(await confirmDialog(CONFIRMS[op](u)))) return;
+  try {
+    const r = await authed('adminUserAction', { staffId: u.id, op });
+    if (r.link) showLinkModal(u, r.link); else toast(r.message);
+    renderPage();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+function showLinkModal(u, link) {
+  const m = openModal(`${modalHead('Link pendaftaran dihantar', 'Emel telah dihantar kepada ' + u.email)}
+    <div class="px-6 py-5"><p class="text-sm text-slate-600">Link ini sekali guna dan juga dihantar melalui emel. Anda boleh menyalinnya untuk dihantar melalui saluran lain (cth. WhatsApp rasmi).</p>
+      <div class="mt-4 flex gap-2"><input readonly class="${C.input} font-mono text-xs" value="${esc(link)}" id="lnk">
+      ${btn('secondary', ico('copy', 'h-4 w-4'), 'id="cpy" title="Salin"')}</div></div>
+    ${modalFoot(btn('primary', 'Selesai', 'data-close'))}`, { size: 'md' });
+  m.q('#cpy').onclick = () => navigator.clipboard.writeText(link).then(() => toast('Link disalin')).catch(() => { m.q('#lnk').select(); toast('Tekan Ctrl+C untuk salin', 'err'); });
+}
+
+function userForm(u) {
+  const isNew = !u; u = u || { id: '', name: '', email: '', dept: '', role: 'STAFF', devices: [], jadual: '', lokasi: '' };
+  const roleOpt = (v, t, d) => `<label class="relative flex cursor-pointer rounded-lg p-3 ring-1 ring-inset ring-slate-300 has-[:checked]:bg-indigo-50/60 has-[:checked]:ring-2 has-[:checked]:ring-indigo-600">
+      <input type="radio" name="role" value="${v}" class="sr-only" ${u.role === v ? 'checked' : ''}>
+      <span><span class="block text-sm font-medium text-slate-900">${t}</span><span class="block text-xs text-slate-500">${d}</span></span></label>`;
+  const m = openModal(`${modalHead(isNew ? 'Tambah pengguna' : 'Edit pengguna', isNew ? 'Cipta akaun dan jemput pengguna mendaftar Digital ID' : u.id)}
+    <form id="uf" class="space-y-5 px-6 py-5">
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div><label class="${C.label}">Staff ID</label>${isNew
+          ? `<div class="flex h-[42px] items-center gap-2 rounded-lg bg-slate-50 px-3 text-sm text-slate-500 ring-1 ring-inset ring-slate-200">${ico('refresh', 'h-4 w-4')}Dijana automatik</div>`
+          : `<input class="${C.input} font-mono" disabled value="${esc(u.id)}">`}</div>
+        <div><label class="${C.label}">Jabatan</label><input name="dept" class="${C.input}" value="${esc(u.dept)}" placeholder="cth. Kewangan"></div>
+        <div class="sm:col-span-2"><label class="${C.label}">Nama penuh</label><input name="name" class="${C.input}" required value="${esc(u.name)}"></div>
+        <div class="sm:col-span-2"><label class="${C.label}">Emel rasmi</label><input name="email" type="email" class="${C.input}" required value="${esc(u.email)}" placeholder="nama@organisasi.gov.my"></div>
+      </div>
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div><label class="${C.label}">Jadual kerja</label><select name="jadual" class="${C.input}">
+          <option value="">Jadual lalai</option>${(S.scheds || []).filter(j => j.status === 'AKTIF' || j.code === u.jadual).map(j => `<option value="${esc(j.code)}" ${u.jadual === j.code ? 'selected' : ''}>${esc(j.name)}</option>`).join('')}
+          <option value="ROSTER" ${u.jadual === 'ROSTER' ? 'selected' : ''}>Ikut roster syif</option></select></div>
+        <div><label class="${C.label}">Lokasi pejabat</label><select name="lokasi" class="${C.input}">
+          <option value="">Semua lokasi aktif</option>${(S.locs || []).map(l => `<option value="${esc(l.id)}" ${u.lokasi === l.id ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}</select></div></div>
+      <div><span class="${C.label}">Peranan</span><div class="grid grid-cols-2 gap-3">
+        ${roleOpt('STAFF', 'Staf', 'Kehadiran & tandatangan')}${roleOpt('ADMIN', 'Admin', 'Akses penuh portal admin')}</div></div>
+      ${isNew ? `<label class="flex items-start gap-3 rounded-lg bg-slate-50 p-3"><input name="sendLink" type="checkbox" checked class="mt-0.5 h-4 w-4 rounded border-slate-300 accent-indigo-600">
+        <span class="text-sm"><span class="font-medium text-slate-900">Hantar link pendaftaran sekarang</span><span class="block text-slate-500">Pengguna akan menerima emel untuk mendaftar cap jari pada telefon.</span></span></label>`
+      : `<div><span class="${C.label}">Peranti berdaftar</span>${u.devices.length ? `<ul class="divide-y divide-slate-100 rounded-lg ring-1 ring-slate-200">${u.devices.map(d => `
+          <li class="flex items-center gap-3 px-3 py-2.5">${ico('phone', 'h-4 w-4 text-slate-400')}<div class="text-sm"><p class="font-medium text-slate-700">${esc(d.label)}</p>
+          <p class="text-xs text-slate-500">Didaftar ${esc(d.created.slice(0, 10))}${d.lastUsed ? ' · Terakhir digunakan ' + esc(d.lastUsed.slice(0, 16)) : ''}</p></div></li>`).join('')}</ul>`
+        : '<p class="text-sm text-slate-500">Tiada peranti berdaftar.</p>'}</div>`}
+      <div id="ufErr" class="hidden rounded-lg bg-rose-50 px-3 py-2.5 text-sm text-rose-700"></div>
+    </form>
+    ${modalFoot(btn('secondary', 'Batal', 'data-close') + `<button type="submit" form="uf" class="${C.btn} ${C.primary}">${isNew ? 'Cipta pengguna' : 'Simpan perubahan'}</button>`)}`, { size: 'md' });
+
+  m.q('#uf').onsubmit = e => {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    const user = { id: u.id, name: f.get('name'), email: f.get('email'), dept: f.get('dept'), role: f.get('role'), jadual: f.get('jadual'), lokasi: f.get('lokasi') };
+    busy(m.q('[form=uf]'), async () => {
+      try {
+        const r = await authed('adminUserSave', { user, isNew, sendLink: isNew && f.get('sendLink') === 'on' });
+        m.close();
+        if (isNew) toast(`Pengguna dicipta dengan Staff ID ${r.id}`); else toast('Perubahan disimpan');
+        if (r.link) showLinkModal({ email: user.email }, r.link);
+        if (r.id === S.me.id) S.me.role = user.role;
+        renderPage();
+      } catch (err) { const el = m.q('#ufErr'); el.textContent = err.message; el.classList.remove('hidden'); }
+    });
+  };
+}
+
+/* ═══════════ HALAMAN: Dokumen (CRUD) ═══════════ */
+PAGES.docs = async view => {
+  const [docs, users] = await Promise.all([authed('adminDocs'), S.users ? Promise.resolve(S.users) : authed('adminUsers')]);
+  S.users = users;
+  if (!view.set(`${pageHead('Dokumen', `${docs.length} dokumen · ${docs.filter(d => d.status === 'OPEN').length} dibuka untuk tandatangan`,
+      btn('primary', ico('plus') + 'Dokumen baharu', 'id="addDoc"'))}
+    <div class="mb-4">${searchBox('dq', 'Cari tajuk atau ID dokumen…')}</div><div id="dList"></div>`)) return;
+
+  const draw = () => {
+    const q = $('#dq').value.toLowerCase();
+    const rows = docs.filter(d => !q || [d.id, d.title].join(' ').toLowerCase().includes(q));
+    $('#dList').innerHTML = rows.length ? `<div class="${C.card} divide-y divide-slate-100">${rows.map(d => {
+      const pct = d.targetCount ? Math.min(100, Math.round(d.signedCount / d.targetCount * 100)) : 0;
+      return `<div class="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
+        <div class="flex min-w-0 flex-1 items-start gap-4">
+          <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500">${ico('doc')}</span>
+          <div class="min-w-0"><p class="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-900">${esc(d.title)} ${badge(d.status)}</p>
+            <p class="mt-0.5 text-xs text-slate-500">${esc(d.id)} · ${d.assigned.length ? 'Untuk ' + esc(d.assigned.join(', ')) : 'Semua staf'}${d.fileId ? ' · Fail Drive dilampirkan' : ''}</p></div></div>
+        <div class="flex items-center gap-4 sm:w-72">
+          <div class="flex-1"><div class="flex justify-between text-xs"><span class="text-slate-500">Ditandatangani</span><span class="font-medium tabular-nums text-slate-700">${d.signedCount} / ${d.targetCount}</span></div>
+            <div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-100"><div class="h-full rounded-full bg-indigo-500" style="width:${pct}%"></div></div></div>
+          <button data-dm="${esc(d.id)}" class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Tindakan">${ico('dots')}</button></div></div>`; }).join('')}</div>`
+      : `<div class="${C.card}">${emptyState('doc', 'Tiada dokumen', 'Klik “Dokumen baharu” untuk menambah.')}</div>`;
+    $$('[data-dm]').forEach(b => b.onclick = e => { e.stopPropagation(); const d = docs.find(x => x.id === b.dataset.dm);
+      openMenu(b, [
+        { label: 'Edit dokumen', icon: 'edit', onClick: () => docForm(d, users) },
+        { label: 'Lihat penandatangan', icon: 'users', onClick: () => signersModal(d) },
+        d.fileId ? { label: 'Buka fail Drive', icon: 'link', onClick: () => window.open('https://drive.google.com/file/d/' + d.fileId + '/view', '_blank') } : null,
+        '-',
+        { label: 'Padam dokumen', icon: 'trash', danger: true, disabled: d.signedCount > 0, onClick: async () => {
+          if (!(await confirmDialog({ title: 'Padam dokumen?', message: `“${d.title}” akan dipadam.`, confirmText: 'Padam', danger: true }))) return;
+          try { await authed('adminDocDelete', { docId: d.id }); toast('Dokumen dipadam'); renderPage(); } catch (err) { toast(err.message, 'err'); } } }
+      ]); });
+  };
+  $('#dq').oninput = draw; $('#addDoc').onclick = () => docForm(null, users);
+  draw();
+};
+
+function docForm(d, users) {
+  const isNew = !d; d = d || { title: '', fileId: '', assigned: [], status: 'OPEN' };
+  const locked = !isNew && d.signedCount > 0;
+  const active = users.filter(u => u.status !== 'DISABLED');
+  const m = openModal(`${modalHead(isNew ? 'Dokumen baharu' : 'Edit dokumen', isNew ? 'Dokumen yang perlu ditandatangani dengan cap jari' : d.id)}
+    <form id="df" class="space-y-5 px-6 py-5">
+      ${locked ? `<div class="flex gap-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">${ico('shield', 'h-4 w-4 mt-0.5')}Dokumen sudah ditandatangani — tajuk dan fail dikunci supaya hash kekal sah.</div>` : ''}
+      <div><label class="${C.label}">Tajuk dokumen</label><input name="title" class="${C.input}" required value="${esc(d.title)}" ${locked ? 'disabled' : ''}></div>
+      <div><label class="${C.label}">Link / ID fail Google Drive <span class="font-normal text-slate-400">(pilihan)</span></label>
+        <input name="fileId" class="${C.input}" value="${esc(d.fileId)}" placeholder="https://drive.google.com/file/d/…" ${locked ? 'disabled' : ''}>
+        <p class="mt-1.5 text-xs text-slate-500">Jika diisi, hash SHA-256 dikira daripada kandungan fail sebenar.</p></div>
+      <div><div class="mb-1.5 flex items-center justify-between"><span class="text-sm font-medium text-slate-700">Perlu ditandatangani oleh</span>
+          <span id="asgCount" class="text-xs text-slate-500"></span></div>
+        <input id="asgQ" class="${C.input} mb-2" placeholder="Cari pengguna…">
+        <div id="asgList" class="max-h-48 divide-y divide-slate-100 overflow-y-auto rounded-lg ring-1 ring-slate-200">${active.map(u => `
+          <label class="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-slate-50" data-n="${esc((u.id + ' ' + u.name).toLowerCase())}">
+            <input type="checkbox" value="${esc(u.id)}" class="h-4 w-4 rounded border-slate-300 accent-indigo-600" ${d.assigned.includes(u.id) ? 'checked' : ''}>
+            <span class="text-sm text-slate-700">${esc(u.name)} <span class="text-slate-400">· ${esc(u.id)}</span></span></label>`).join('')}</div></div>
+      <div><label class="${C.label}">Status</label><select name="status" class="${C.input}">
+        <option value="OPEN" ${d.status === 'OPEN' ? 'selected' : ''}>Dibuka — boleh ditandatangani</option>
+        <option value="CLOSED" ${d.status === 'CLOSED' ? 'selected' : ''}>Ditutup</option></select></div>
+      <div id="dfErr" class="hidden rounded-lg bg-rose-50 px-3 py-2.5 text-sm text-rose-700"></div>
+    </form>
+    ${modalFoot(btn('secondary', 'Batal', 'data-close') + `<button type="submit" form="df" class="${C.btn} ${C.primary}">${isNew ? 'Cipta dokumen' : 'Simpan perubahan'}</button>`)}`, { size: 'md' });
+
+  const count = () => { const n = $$('#asgList input:checked', m.el).length; m.q('#asgCount').textContent = n ? n + ' dipilih' : 'Tiada dipilih = semua staf'; };
+  $$('#asgList input', m.el).forEach(i => i.onchange = count); count();
+  m.q('#asgQ').oninput = e => { const q = e.target.value.toLowerCase(); $$('#asgList label', m.el).forEach(l => l.classList.toggle('hidden', !!q && !l.dataset.n.includes(q))); };
+  m.q('#df').onsubmit = e => {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    const doc = { id: d.id, title: locked ? d.title : f.get('title'), fileId: locked ? d.fileId : f.get('fileId'), status: f.get('status'),
+      assigned: $$('#asgList input:checked', m.el).map(i => i.value).join(',') };
+    busy(m.q('[form=df]'), async () => {
+      try { const r = await authed('adminDocSave', { doc, isNew }); m.close(); toast(isNew ? `Dokumen ${r.id} dicipta` : 'Perubahan disimpan'); renderPage(); }
+      catch (err) { const el = m.q('#dfErr'); el.textContent = err.message; el.classList.remove('hidden'); }
+    });
+  };
+}
+
+async function signersModal(d) {
+  const m = openModal(`${modalHead('Penandatangan', d.title)}<div id="sg" class="px-6 py-5"><div class="skeleton h-24 rounded-lg"></div></div>
+    ${modalFoot(btn('primary', 'Tutup', 'data-close'))}`, { size: 'md' });
+  try {
+    const list = (await authed('adminSignatures')).filter(s => s.docId === d.id);
+    const signedIds = list.map(s => s.staffId);
+    const outstanding = (d.assigned.length ? d.assigned : (S.users || []).filter(u => u.status === 'ACTIVE').map(u => u.id)).filter(id => !signedIds.includes(id));
+    m.q('#sg').innerHTML = `${list.length ? `<ul class="divide-y divide-slate-100">${list.map(s => `<li class="flex items-center gap-3 py-2.5">${avatar(s.name, 'h-8 w-8 text-[11px]')}
+        <div class="min-w-0 flex-1"><p class="text-sm font-medium text-slate-900">${esc(s.name)}</p><p class="text-xs text-slate-500">${esc(s.time)} · ${esc(s.receipt)}</p></div>${badge('SIGNED')}</li>`).join('')}</ul>`
+      : '<p class="text-sm text-slate-500">Belum ada tandatangan.</p>'}
+      ${outstanding.length ? `<p class="mt-5 text-xs font-semibold uppercase tracking-wide text-slate-400">Belum menandatangani (${outstanding.length})</p>
+        <p class="mt-2 text-sm text-slate-600">${esc(outstanding.join(', '))}</p>` : ''}`;
+  } catch (e) { m.q('#sg').textContent = e.message; }
+}
+
+/* ═══════════ HALAMAN: Rekod Kehadiran Saya ═══════════ */
+const monthLabel = m => new Date(Number(m.slice(0, 4)), Number(m.slice(5, 7)) - 1, 1).toLocaleDateString('ms-MY', { month: 'long', year: 'numeric' });
+const shiftMonth = (m, n) => { const d = new Date(Number(m.slice(0, 4)), Number(m.slice(5, 7)) - 1 + n, 1); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); };
+const tile = (label, value, sub, tone = 'text-slate-900') => `<div class="${C.card} p-4"><p class="text-xs font-medium text-slate-500">${label}</p>
+  <p class="mt-1.5 text-2xl font-semibold tabular-nums tracking-tight ${tone}">${value}</p>${sub ? `<p class="mt-0.5 text-xs text-slate-400">${sub}</p>` : ''}</div>`;
+
+PAGES.mine = async view => {
+  S.myMonth = S.myMonth || todayKL().slice(0, 7);
+  const d = await authed('myAttendance', { month: S.myMonth });
+  const sm = d.summary, isNow = S.myMonth === todayKL().slice(0, 7);
+  const rows = d.days.filter(x => x.status !== 'TIADA' && x.status !== 'AKAN_DATANG');
+  if (!view.set(`${pageHead('Rekod Kehadiran', 'Kehadiran anda yang direkod dengan cap jari', `
+      <div class="inline-flex items-center rounded-lg bg-white shadow-sm ring-1 ring-slate-300">
+        <button data-mm="-1" class="rounded-l-lg p-2.5 text-slate-500 hover:bg-slate-50" aria-label="Bulan sebelum">${ico('chevL', 'h-4 w-4')}</button>
+        <span class="min-w-[9rem] px-2 text-center text-sm font-semibold text-slate-700">${esc(monthLabel(S.myMonth))}</span>
+        <button data-mm="1" class="rounded-r-lg p-2.5 text-slate-500 hover:bg-slate-50 disabled:opacity-30" ${isNow ? 'disabled' : ''} aria-label="Bulan berikut">${ico('chevR', 'h-4 w-4')}</button></div>`)}
+    <div class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      ${tile('Kadar kehadiran', sm.workdays ? sm.rate + '%' : '—', `${sm.workdays - sm.absent} / ${sm.workdays} hari bekerja`)}
+      ${tile('Jumlah jam kerja', fmtMin(sm.workedMin), sm.avgIn ? 'Purata masuk ' + sm.avgIn : '')}
+      ${tile('Lewat', sm.late, sm.lateMin ? fmtMin(sm.lateMin) + ' keseluruhan' : 'kali', sm.late ? 'text-amber-600' : undefined)}
+      ${tile('Pulang awal', sm.early, 'kali', sm.early ? 'text-orange-600' : undefined)}
+      ${tile('Tidak hadir', sm.absent, sm.noOut ? sm.noOut + ' tiada rekod keluar' : 'hari', sm.absent ? 'text-rose-600' : undefined)}
+      ${tile('Tugas luar', sm.outstation, 'hari')}</div>
+    <div class="${C.card} relative overflow-hidden"><div class="relative overflow-x-auto"><table class="min-w-full divide-y divide-slate-100">
+      <thead class="bg-slate-50/70"><tr><th class="${C.th}">Tarikh</th><th class="${C.th} hidden md:table-cell">Jadual</th><th class="${C.th}">Masuk</th><th class="${C.th}">Keluar</th>
+        <th class="${C.th} hidden sm:table-cell">Jam kerja</th><th class="${C.th}">Status</th></tr></thead>
+      <tbody class="divide-y divide-slate-100">${rows.length ? rows.slice().reverse().map(r => {
+        const muted = r.status === 'REHAT' || r.status === 'CUTI_UMUM';
+        return `<tr class="${muted ? 'bg-slate-50/50 text-slate-400' : ''}">
+          <td class="${C.td} whitespace-nowrap"><span class="font-medium ${muted ? '' : 'text-slate-900'}">${DAYS[r.dow % 7]} ${esc(r.date.slice(8))}</span></td>
+          <td class="${C.td} hidden text-slate-500 md:table-cell">${esc(r.schedLabel)}</td>
+          <td class="${C.td} tabular-nums">${esc(r.in || '—')}${r.late ? `<span class="block text-xs text-amber-600">+${fmtMin(r.late)}</span>` : ''}</td>
+          <td class="${C.td} tabular-nums">${esc(r.out || '—')}${r.outNextDay ? '<sup class="text-slate-400">+1</sup>' : ''}${r.early ? `<span class="block text-xs text-orange-600">−${fmtMin(r.early)}</span>` : ''}</td>
+          <td class="${C.td} hidden tabular-nums text-slate-600 sm:table-cell">${r.worked ? fmtMin(r.worked) : '—'}</td>
+          <td class="${C.td}"><div class="flex flex-wrap gap-1">${stBadges(r)}</div></td></tr>`; }).join('')
+        : `<tr><td colspan="6">${emptyState('calendar', 'Tiada rekod untuk bulan ini')}</td></tr>`}</tbody></table></div></div>`)) return;
+  $$('[data-mm]').forEach(b => b.onclick = () => { S.myMonth = shiftMonth(S.myMonth, Number(b.dataset.mm)); renderPage(); });
+};
+
+/* ═══════════ HALAMAN: Kehadiran (admin) ═══════════ */
+PAGES.attendance = async view => {
+  S.attTab = S.attTab || 'today';
+  const tabs = `<div class="mb-5 flex gap-1 rounded-xl bg-slate-100 p-1 sm:inline-flex">${[['today', 'Papan harian'], ['log', 'Log rekod']].map(([k, l]) =>
+    `<button data-tab="${k}" class="flex-1 rounded-lg px-4 py-2 text-sm font-medium sm:flex-none ${S.attTab === k ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}">${l}</button>`).join('')}</div>`;
+  const bindTabs = () => $$('[data-tab]').forEach(b => b.onclick = () => { S.attTab = b.dataset.tab; renderPage(); });
+  return S.attTab === 'today' ? attBoard(view, tabs, bindTabs) : attLog(view, tabs, bindTabs);
+};
+
+async function attBoard(view, tabs, bindTabs) {
+  S.boardDate = S.boardDate || todayKL();
+  const d = await authed('adminToday', { date: S.boardDate });
+  const c = d.counts;
+  const FILTERS = [['', 'Semua'], ['IN', 'Hadir'], ['LEWAT', 'Lewat'], ['TIDAK_HADIR', 'Tidak hadir'], ['BELUM', 'Belum masuk'], ['PULANG_AWAL', 'Pulang awal'], ['TIADA_KELUAR', 'Tiada keluar'], ['LUAR', 'Tugas luar']];
+  S.boardFilter = S.boardFilter || '';
+  if (!view.set(`${pageHead('Kehadiran', `Papan kehadiran · dikemas kini ${esc(d.now.slice(11, 16))}`,
+      `<input type="date" id="bDate" class="${C.input.replace('w-full', '')} w-44" value="${esc(S.boardDate)}" max="${todayKL()}">` +
+      btn('secondary', ico('refresh', 'h-4 w-4'), 'id="bRef" title="Muat semula"') + btn('secondary', ico('download', 'h-4 w-4') + 'CSV', 'id="bCsv"'))}
+    ${tabs}
+    <div class="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      ${tile('Dijangka hadir', c.expected, `${c.total} staf aktif`)}
+      ${tile('Hadir', c.present, c.expected ? Math.round(c.present / c.expected * 100) + '% daripada dijangka' : '', 'text-emerald-600')}
+      ${tile('Lewat', c.late, '', c.late ? 'text-amber-600' : undefined)}
+      ${tile('Tidak hadir', c.absent, c.notYet ? c.notYet + ' belum masuk' : '', c.absent ? 'text-rose-600' : undefined)}
+      ${tile('Pulang awal', c.early, c.noOut ? c.noOut + ' tiada rekod keluar' : '', c.early ? 'text-orange-600' : undefined)}
+      ${tile('Tugas luar', c.outstation, '', c.outstation ? 'text-violet-600' : undefined)}</div>
+    <div class="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center">
+      <div class="flex flex-wrap gap-1.5">${FILTERS.map(([k, l]) => `<button data-f="${k}" class="rounded-full px-3 py-1.5 text-xs font-medium ring-1 ring-inset ${S.boardFilter === k ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white text-slate-600 ring-slate-300 hover:bg-slate-50'}">${l}</button>`).join('')}</div>
+      <div class="lg:ml-auto lg:w-72">${searchBox('bq', 'Cari nama / bahagian…')}</div></div>
+    <div class="${C.card} relative overflow-hidden"><div class="relative overflow-x-auto"><table class="min-w-full divide-y divide-slate-100">
+      <thead class="bg-slate-50/70"><tr><th class="${C.th}">Staf</th><th class="${C.th} hidden lg:table-cell">Jadual</th><th class="${C.th}">Masuk</th><th class="${C.th}">Keluar</th>
+        <th class="${C.th} hidden sm:table-cell">Jam</th><th class="${C.th}">Status</th><th class="${C.th} hidden md:table-cell">Lokasi</th></tr></thead>
+      <tbody id="bRows" class="divide-y divide-slate-100"></tbody></table></div></div>`)) return;
+  bindTabs();
+  const match = r => { const f = S.boardFilter; if (!f) return true; if (f === 'IN') return !!r.in; if (f === 'LUAR') return r.outstation; return r.status === f || r.flags.includes(f); };
+  const draw = () => {
+    const q = $('#bq').value.toLowerCase();
+    const rows = d.rows.filter(r => match(r) && (!q || [r.name, r.staffId, r.dept].join(' ').toLowerCase().includes(q)));
+    $('#bRows').innerHTML = rows.length ? rows.map(r => `<tr>
+      <td class="${C.td}"><p class="font-medium text-slate-900">${esc(r.name)}</p><p class="text-xs text-slate-500">${esc(r.staffId)}${r.dept ? ' · ' + esc(r.dept) : ''}</p></td>
+      <td class="${C.td} hidden text-slate-500 lg:table-cell"><p>${esc(r.schedLabel)}</p><p class="text-xs text-slate-400">${esc(r.schedText)}</p></td>
+      <td class="${C.td} tabular-nums">${esc(r.in || '—')}${r.late ? `<span class="block text-xs text-amber-600">+${fmtMin(r.late)}</span>` : ''}</td>
+      <td class="${C.td} tabular-nums">${esc(r.out || '—')}${r.outNextDay ? '<sup class="text-slate-400">+1</sup>' : ''}${r.early ? `<span class="block text-xs text-orange-600">−${fmtMin(r.early)}</span>` : ''}</td>
+      <td class="${C.td} hidden tabular-nums text-slate-600 sm:table-cell">${r.worked ? fmtMin(r.worked) : '—'}</td>
+      <td class="${C.td}"><div class="flex flex-wrap gap-1">${stBadges(r)}</div></td>
+      <td class="${C.td} hidden max-w-[14rem] truncate text-slate-500 md:table-cell" title="${esc(r.where)}">${esc(r.where || '—')}</td></tr>`).join('')
+      : `<tr><td colspan="7">${emptyState('users', 'Tiada staf dalam tapisan ini')}</td></tr>`;
+  };
+  $$('[data-f]').forEach(b => b.onclick = () => { S.boardFilter = b.dataset.f; renderPage(); });
+  $('#bq').oninput = draw; draw();
+  $('#bDate').onchange = e => { S.boardDate = e.target.value || todayKL(); renderPage(); };
+  $('#bRef').onclick = () => renderPage();
+  $('#bCsv').onclick = () => downloadCsv(`kehadiran_harian_${d.date}.csv`, [['Tarikh', 'StaffID', 'Nama', 'Bahagian', 'Jadual', 'Masuk', 'Keluar', 'Lewat (min)', 'Pulang awal (min)', 'Jam kerja (min)', 'Status', 'Tugas luar', 'Lokasi'],
+    ...d.rows.map(r => [d.date, r.staffId, r.name, r.dept, r.schedLabel, r.in, r.out, r.late, r.early, r.worked, r.status, r.outstation ? 'Ya' : '', r.where])]);
+}
+
+async function attLog(view, tabs, bindTabs) {
+  const t = todayKL();
+  S.attFrom = S.attFrom || t; S.attTo = S.attTo || t;
+  const rows = await authed('adminAttendance', { from: S.attFrom, to: S.attTo });
+  if (!view.set(`${pageHead('Kehadiran', 'Log rekod mentah daftar masuk & keluar (disahkan cap jari)', btn('secondary', ico('download', 'h-4 w-4') + 'CSV', 'id="csv"'))}
+    ${tabs}
+    <div class="${C.card} mb-4 flex flex-col gap-3 p-4 sm:flex-row sm:items-end">
+      <div><label class="${C.label}">Dari</label><input type="date" id="aFrom" class="${C.input}" value="${S.attFrom}"></div>
+      <div><label class="${C.label}">Hingga</label><input type="date" id="aTo" class="${C.input}" value="${S.attTo}"></div>
+      ${btn('primary', 'Papar', 'id="aGo"')}<p class="text-sm text-slate-500 sm:ml-auto">${rows.length} rekod</p></div>
+    <div class="${C.card} relative overflow-hidden"><div class="relative overflow-x-auto"><table class="min-w-full divide-y divide-slate-100">
+      <thead class="bg-slate-50/70"><tr><th class="${C.th}">Masa</th><th class="${C.th}">Staf</th><th class="${C.th}">Jenis</th><th class="${C.th}">Kawasan</th><th class="${C.th} hidden md:table-cell">Rujukan</th></tr></thead>
+      <tbody class="divide-y divide-slate-100">${rows.length ? rows.map(r => `<tr>
+        <td class="${C.td} whitespace-nowrap tabular-nums text-slate-600">${esc(r.time.slice(0, 16))}${r.workDate && r.workDate !== r.time.slice(0, 10) ? `<span class="block text-xs text-slate-400">hari kerja ${esc(r.workDate)}</span>` : ''}</td>
+        <td class="${C.td}"><p class="font-medium text-slate-900">${esc(r.name)}</p><p class="text-xs text-slate-500">${esc(r.staffId)}</p></td>
+        <td class="${C.td}">${badge(r.type)}</td>
+        <td class="${C.td}">${r.kawasan === 'LUAR' ? `${badge('LUAR')} ${r.review === 'MENUNGGU' ? badge('MENUNGGU') : ''}<p class="mt-1 max-w-[16rem] truncate text-xs text-slate-500" title="${esc(r.note)}">${esc(r.note)}</p>`
+          : r.kawasan === 'DALAM' ? `<span class="text-slate-600">Dalam kawasan</span><p class="text-xs text-slate-400">${esc(r.dist)} m${r.acc ? ' · ±' + esc(r.acc) + ' m' : ''}</p>` : '<span class="text-slate-400">—</span>'}
+          ${r.lat ? `<a target="_blank" rel="noopener" href="https://maps.google.com/?q=${esc(r.lat)},${esc(r.lng)}" class="text-xs font-medium text-indigo-600 hover:text-indigo-500">Peta</a>` : ''}</td>
+        <td class="${C.td} hidden font-mono text-xs text-slate-500 md:table-cell">${esc(r.id)}</td></tr>`).join('')
+        : `<tr><td colspan="5">${emptyState('clock', 'Tiada rekod', 'Tiada kehadiran direkod dalam tempoh ini.')}</td></tr>`}</tbody></table></div></div>`)) return;
+  bindTabs();
+  $('#aGo').onclick = () => { S.attFrom = $('#aFrom').value || t; S.attTo = $('#aTo').value || S.attFrom; renderPage(); };
+  $('#csv').onclick = () => downloadCsv(`log_kehadiran_${S.attFrom}_${S.attTo}.csv`,
+    [['Masa', 'Hari kerja', 'StaffID', 'Nama', 'Jenis', 'Kawasan', 'Jarak (m)', 'Ketepatan (m)', 'Catatan', 'Semakan', 'Lat', 'Lng', 'Rujukan'],
+     ...rows.map(r => [r.time, r.workDate, r.staffId, r.name, r.type, r.kawasan, r.dist, r.acc, r.note, r.review, r.lat, r.lng, r.id])]);
+}
+
+/* ═══════════ HALAMAN: Tetapan (lokasi & jadual) ═══════════ */
+const DAY_NAMES = ['Isn', 'Sel', 'Rab', 'Kha', 'Jum', 'Sab', 'Ahd'];
+const daysText = s => { const d = String(s).split(',').map(Number).sort(); const k = d.join(',');
+  return k === '1,2,3,4,5' ? 'Isnin – Jumaat' : k === '1,2,3,4,5,6,7' ? 'Setiap hari' : k === '1,2,3,4,5,6' ? 'Isnin – Sabtu' : d.map(x => DAY_NAMES[x - 1]).join(', '); };
+const schedText = j => j.type === 'FLEXI' ? `Masuk ${j.start}–${j.latest} · ${j.hours} jam` : `${j.start} · ${j.hours} jam${j.grace ? ' · tenggang ' + j.grace + ' min' : ''}`;
+
+PAGES.settings = async view => {
+  const [locs, scheds] = await Promise.all([authed('adminLocations'), authed('adminSchedules')]);
+  S.locs = locs; S.scheds = scheds;
+  const section = (title, sub, action, body) => `<section class="${C.card} mb-6"><div class="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+    <div><h2 class="text-base font-semibold text-slate-900">${title}</h2><p class="mt-0.5 text-sm text-slate-500">${sub}</p></div>${action}</div>${body}</section>`;
+  const menuBtn = (attr) => `<button ${attr} class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Tindakan">${ico('dots')}</button>`;
+
+  if (!view.set(`${pageHead('Tetapan', 'Lokasi pejabat (geofence) dan jadual waktu kerja')}
+    ${section('Lokasi pejabat', locs.length ? 'Staf mesti berada dalam radius untuk daftar masuk/keluar, atau pilih Tugas Luar' : '⚠️ Tiada lokasi — geofence tidak aktif, staf boleh daftar dari mana-mana',
+      btn('primary', ico('plus') + 'Tambah lokasi', 'id="addLoc"'),
+      locs.length ? `<ul class="divide-y divide-slate-100">${locs.map(l => `<li class="flex items-center gap-4 px-5 py-4 sm:px-6">
+        <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${l.status === 'AKTIF' ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-400'}">${ico('pin')}</span>
+        <div class="min-w-0 flex-1"><p class="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-900">${esc(l.name)} ${l.status !== 'AKTIF' ? badge('TIDAK_AKTIF') : ''}</p>
+          <p class="text-xs text-slate-500">Radius ${l.radius} m · ${l.lat.toFixed(5)}, ${l.lng.toFixed(5)} · ${l.staffCount ? l.staffCount + ' staf khusus' : 'semua staf'}</p></div>
+        ${menuBtn(`data-lm="${esc(l.id)}"`)}</li>`).join('')}</ul>` : emptyState('pin', 'Belum ada lokasi', 'Tambah lokasi pejabat untuk mengaktifkan geofence.'))}
+    ${section('Jadual waktu kerja', 'Flexi, waktu berperingkat dan syif. Staf tanpa jadual ikut jadual lalai.',
+      btn('primary', ico('plus') + 'Tambah jadual', 'id="addSch"'),
+      `<ul class="divide-y divide-slate-100">${scheds.map(j => `<li class="flex items-center gap-4 px-5 py-4 sm:px-6">
+        <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 font-mono text-[10px] font-semibold text-slate-600">${esc(j.code.slice(0, 6))}</span>
+        <div class="min-w-0 flex-1"><p class="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-900">${esc(j.name)} ${badge(j.type)} ${j.status !== 'AKTIF' ? badge('TIDAK_AKTIF') : ''}</p>
+          <p class="text-xs text-slate-500">${esc(schedText(j))} · ${esc(daysText(j.days))} · ${j.staffCount} staf</p></div>
+        ${menuBtn(`data-sm="${esc(j.code)}"`)}</li>`).join('')}</ul>`)}
+    <div class="flex gap-3 rounded-xl bg-sky-50 p-4 text-sm text-sky-800 ring-1 ring-sky-600/10">${ico('calendar', 'h-5 w-5 shrink-0')}
+      <p><b>Roster syif & cuti umum</b> buat masa ini diisi terus dalam sheet <b>Roster</b> (Tarikh, StaffID, Kod jadual atau REHAT) dan <b>CutiUmum</b> (Tarikh, Nama). Halaman khas akan ditambah dalam Fasa 2.</p></div>`)) return;
+
+  $('#addLoc').onclick = () => locForm(null);
+  $('#addSch').onclick = () => schedForm(null);
+  $$('[data-lm]').forEach(b => b.onclick = e => { e.stopPropagation(); const l = locs.find(x => x.id === b.dataset.lm);
+    openMenu(b, [
+      { label: 'Edit lokasi', icon: 'edit', onClick: () => locForm(l) },
+      { label: 'Lihat di Google Maps', icon: 'link', onClick: () => window.open(`https://maps.google.com/?q=${l.lat},${l.lng}`, '_blank') }, '-',
+      { label: 'Padam lokasi', icon: 'trash', danger: true, onClick: async () => {
+        if (!(await confirmDialog({ title: 'Padam lokasi?', message: `“${l.name}” akan dipadam.`, confirmText: 'Padam', danger: true }))) return;
+        try { await authed('adminLocationDelete', { id: l.id }); toast('Lokasi dipadam'); renderPage(); } catch (err) { toast(err.message, 'err'); } } }]); });
+  $$('[data-sm]').forEach(b => b.onclick = e => { e.stopPropagation(); const j = scheds.find(x => x.code === b.dataset.sm);
+    openMenu(b, [
+      { label: 'Edit jadual', icon: 'edit', onClick: () => schedForm(j) }, '-',
+      { label: 'Padam jadual', icon: 'trash', danger: true, disabled: j.staffCount > 0, onClick: async () => {
+        if (!(await confirmDialog({ title: 'Padam jadual?', message: `“${j.name}” akan dipadam.`, confirmText: 'Padam', danger: true }))) return;
+        try { await authed('adminScheduleDelete', { code: j.code }); toast('Jadual dipadam'); renderPage(); } catch (err) { toast(err.message, 'err'); } } }]); });
+};
+
+function formError(m, id, err) { const el = m.q('#' + id); el.textContent = err.message; el.classList.remove('hidden'); }
+
+function locForm(l) {
+  const isNew = !l; l = l || { name: '', lat: '', lng: '', radius: 150, status: 'AKTIF' };
+  const m = openModal(`${modalHead(isNew ? 'Tambah lokasi' : 'Edit lokasi', 'Titik tengah pejabat dan radius yang dibenarkan')}
+    <form id="lf" class="space-y-4 px-6 py-5">
+      <div><label class="${C.label}">Nama lokasi</label><input name="name" class="${C.input}" required value="${esc(l.name)}" placeholder="cth. Ibu Pejabat, Aras 5"></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="${C.label}">Latitud</label><input name="lat" class="${C.input} font-mono" required value="${esc(l.lat)}" placeholder="3.139003"></div>
+        <div><label class="${C.label}">Longitud</label><input name="lng" class="${C.input} font-mono" required value="${esc(l.lng)}" placeholder="101.686855"></div></div>
+      <div class="flex flex-wrap items-center gap-2">${btn('secondary', ico('pin', 'h-4 w-4') + 'Guna lokasi saya sekarang', 'id="useHere"')}
+        <a id="mapLink" target="_blank" rel="noopener" class="text-sm font-medium text-indigo-600 hover:text-indigo-500">Semak di peta →</a></div>
+      <p class="text-xs text-slate-500">Petua: dalam Google Maps, klik kanan pada bangunan pejabat → klik koordinat untuk salin, kemudian tampal ke ruangan Latitud (kedua-dua nilai akan diisi).</p>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="${C.label}">Radius (meter)</label><input name="radius" type="number" min="20" max="5000" class="${C.input}" required value="${esc(l.radius)}"></div>
+        <div><label class="${C.label}">Status</label><select name="status" class="${C.input}"><option value="AKTIF">Aktif</option><option value="TIDAK_AKTIF" ${l.status === 'TIDAK_AKTIF' ? 'selected' : ''}>Tidak aktif</option></select></div></div>
+      <div id="lfErr" class="hidden rounded-lg bg-rose-50 px-3 py-2.5 text-sm text-rose-700"></div></form>
+    ${modalFoot(btn('secondary', 'Batal', 'data-close') + `<button type="submit" form="lf" class="${C.btn} ${C.primary}">Simpan lokasi</button>`)}`);
+  const f = m.q('#lf'), lat = f.elements.lat, lng = f.elements.lng;
+  const sync = () => { m.q('#mapLink').href = `https://maps.google.com/?q=${encodeURIComponent(lat.value)},${encodeURIComponent(lng.value)}`; };
+  lat.oninput = () => { const p = lat.value.split(/[,\s]+/).filter(Boolean); if (p.length === 2) { lat.value = p[0]; lng.value = p[1]; } sync(); };
+  lng.oninput = sync; sync();
+  m.q('#useHere').onclick = e => busy(e.currentTarget, async () => {
+    const g = await getGeoFix();
+    if (g.geoError) return formError(m, 'lfErr', new Error(g.geoError));
+    lat.value = g.lat.toFixed(6); lng.value = g.lng.toFixed(6); sync();
+    toast(`Lokasi semasa diisi (ketepatan ±${Math.round(g.acc)} m)`);
+  });
+  f.onsubmit = e => { e.preventDefault(); const d = new FormData(f);
+    busy(m.q('[form=lf]'), async () => {
+      try { await authed('adminLocationSave', { isNew, loc: { id: l.id, name: d.get('name'), lat: d.get('lat'), lng: d.get('lng'), radius: d.get('radius'), status: d.get('status') } });
+        m.close(); toast('Lokasi disimpan'); renderPage(); } catch (err) { formError(m, 'lfErr', err); }
+    }); };
+}
+
+function schedForm(j) {
+  const isNew = !j; j = j || { code: '', name: '', type: 'TETAP', start: '08:00', latest: '09:00', hours: 9, grace: 0, days: '1,2,3,4,5', status: 'AKTIF' };
+  const days = String(j.days).split(',');
+  const m = openModal(`${modalHead(isNew ? 'Tambah jadual' : 'Edit jadual', isNew ? 'Waktu kerja untuk sekumpulan staf' : j.code)}
+    <form id="sf" class="space-y-4 px-6 py-5">
+      <div class="grid grid-cols-3 gap-3">
+        <div><label class="${C.label}">Kod</label><input name="code" class="${C.input} font-mono uppercase" maxlength="20" required value="${esc(j.code)}" ${isNew ? '' : 'disabled'} placeholder="P0900"></div>
+        <div class="col-span-2"><label class="${C.label}">Nama</label><input name="name" class="${C.input}" required value="${esc(j.name)}" placeholder="Berperingkat 9:00"></div></div>
+      <div><span class="${C.label}">Jenis</span><div class="grid grid-cols-2 gap-3">${[['TETAP', 'Waktu tetap / syif', 'Masuk pada waktu tertentu'], ['FLEXI', 'Flexi', 'Masuk dalam julat waktu']].map(([v, t, dsc]) => `
+        <label class="flex cursor-pointer rounded-lg p-3 ring-1 ring-inset ring-slate-300 has-[:checked]:bg-indigo-50/60 has-[:checked]:ring-2 has-[:checked]:ring-indigo-600">
+          <input type="radio" name="type" value="${v}" class="sr-only" ${j.type === v ? 'checked' : ''}><span><span class="block text-sm font-medium text-slate-900">${t}</span><span class="block text-xs text-slate-500">${dsc}</span></span></label>`).join('')}</div></div>
+      <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div><label class="${C.label}" id="startLbl">Masuk</label><input name="start" type="time" class="${C.input}" required value="${esc(j.start)}"></div>
+        <div data-flexi><label class="${C.label}">Had masuk</label><input name="latest" type="time" class="${C.input}" value="${esc(j.latest || '09:00')}"></div>
+        <div><label class="${C.label}">Jam kerja</label><input name="hours" type="number" step="0.5" min="1" max="24" class="${C.input}" required value="${esc(j.hours)}"></div>
+        <div data-tetap><label class="${C.label}">Tenggang (min)</label><input name="grace" type="number" min="0" max="120" class="${C.input}" value="${esc(j.grace)}"></div></div>
+      <p id="schHint" class="text-xs text-slate-500"></p>
+      <div><span class="${C.label}">Hari kerja</span><div class="flex flex-wrap gap-2">${DAY_NAMES.map((n, i) => `
+        <label class="cursor-pointer"><input type="checkbox" name="days" value="${i + 1}" class="peer sr-only" ${days.includes(String(i + 1)) ? 'checked' : ''}>
+          <span class="inline-flex h-9 w-12 items-center justify-center rounded-lg text-sm font-medium ring-1 ring-inset ring-slate-300 peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:ring-indigo-600">${n}</span></label>`).join('')}</div>
+        <p class="mt-1.5 text-xs text-slate-500">Untuk staf syif (Jadual = ROSTER), hari kerja ditentukan oleh roster.</p></div>
+      <div><label class="${C.label}">Status</label><select name="status" class="${C.input}"><option value="AKTIF">Aktif</option><option value="TIDAK_AKTIF" ${j.status === 'TIDAK_AKTIF' ? 'selected' : ''}>Tidak aktif</option></select></div>
+      <div id="sfErr" class="hidden rounded-lg bg-rose-50 px-3 py-2.5 text-sm text-rose-700"></div></form>
+    ${modalFoot(btn('secondary', 'Batal', 'data-close') + `<button type="submit" form="sf" class="${C.btn} ${C.primary}">Simpan jadual</button>`)}`);
+  const f = m.q('#sf');
+  const sync = () => {
+    const flexi = f.elements.type.value === 'FLEXI', st = f.elements.start.value, h = Number(f.elements.hours.value || 0);
+    $$('[data-flexi]', m.el).forEach(x => x.classList.toggle('hidden', !flexi));
+    $$('[data-tetap]', m.el).forEach(x => x.classList.toggle('hidden', flexi));
+    m.q('#startLbl').textContent = flexi ? 'Masuk paling awal' : 'Masuk';
+    const add = (t, hrs) => { if (!t) return ''; const [a, b] = t.split(':').map(Number); const x = (a * 60 + b + Math.round(hrs * 60)) % 1440; return String(Math.floor(x / 60)).padStart(2, '0') + ':' + String(x % 60).padStart(2, '0'); };
+    m.q('#schHint').textContent = flexi
+      ? `Masuk antara ${st}–${f.elements.latest.value}; selepas ${f.elements.latest.value} dikira lewat. Waktu keluar = waktu masuk + ${h} jam (contoh: masuk ${st} → keluar ${add(st, h)}).`
+      : `Waktu kerja ${st}–${add(st, h)}${Number(f.elements.grace.value) ? ', lewat jika masuk selepas ' + add(st, Number(f.elements.grace.value) / 60) : ''}.`;
+  };
+  f.oninput = sync; sync();
+  f.onsubmit = e => { e.preventDefault(); const d = new FormData(f);
+    busy(m.q('[form=sf]'), async () => {
+      try { await authed('adminScheduleSave', { isNew, sched: { code: isNew ? d.get('code') : j.code, name: d.get('name'), type: d.get('type'), start: d.get('start'),
+          latest: d.get('latest'), hours: d.get('hours'), grace: d.get('grace') || 0, days: d.getAll('days').join(','), status: d.get('status') } });
+        m.close(); toast('Jadual disimpan'); renderPage(); } catch (err) { formError(m, 'sfErr', err); }
+    }); };
+}
+
+function downloadCsv(name, rows) {
+  const csv = rows.map(r => r.map(v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+/* ═══════════ HALAMAN: Tandatangan ═══════════ */
+PAGES.signatures = async view => {
+  const rows = await authed('adminSignatures');
+  if (!view.set(`${pageHead('Rekod tandatangan', 'Setiap tandatangan boleh disahkan semula secara kriptografi pada bila-bila masa')}
+    <div class="mb-4">${searchBox('sq', 'Cari resit, dokumen atau penandatangan…')}</div>
+    <div class="${C.card} relative overflow-hidden"><div class="relative overflow-x-auto"><table class="min-w-full divide-y divide-slate-100">
+      <thead class="bg-slate-50/70"><tr><th class="${C.th}">Dokumen</th><th class="${C.th}">Penandatangan</th><th class="${C.th} hidden md:table-cell">Masa</th>
+        <th class="${C.th} hidden lg:table-cell">Hash dokumen</th><th class="${C.th} text-right">Pengesahan</th></tr></thead>
+      <tbody id="sRows" class="divide-y divide-slate-100"></tbody></table></div></div>`)) return;
+  const draw = () => {
+    const q = $('#sq').value.toLowerCase();
+    const list = rows.filter(r => !q || [r.receipt, r.title, r.docId, r.name, r.staffId].join(' ').toLowerCase().includes(q));
+    $('#sRows').innerHTML = list.length ? list.map(r => `<tr>
+      <td class="${C.td}"><p class="font-medium text-slate-900">${esc(r.title)}</p><p class="font-mono text-xs text-slate-500">${esc(r.receipt)}</p></td>
+      <td class="${C.td}"><p class="text-slate-900">${esc(r.name)}</p><p class="text-xs text-slate-500">${esc(r.staffId)}<span class="md:hidden"> · ${esc(r.time.slice(0, 16))}</span></p></td>
+      <td class="${C.td} hidden whitespace-nowrap tabular-nums text-slate-600 md:table-cell">${esc(r.time.slice(0, 16))}</td>
+      <td class="${C.td} hidden font-mono text-xs text-slate-500 lg:table-cell" title="${esc(r.docHash)}">${esc(r.docHash.slice(0, 16))}…</td>
+      <td class="${C.td} text-right" data-v="${esc(r.receipt)}">${btn('secondary', ico('shield', 'h-4 w-4') + 'Sahkan', `data-verify="${esc(r.receipt)}"`)}</td></tr>`).join('')
+      : `<tr><td colspan="5">${emptyState('pen', 'Tiada rekod tandatangan')}</td></tr>`;
+    $$('[data-verify]').forEach(b => b.onclick = () => busy(b, async () => {
+      try { const v = await authed('adminVerifySignature', { receiptId: b.dataset.verify });
+        b.parentElement.innerHTML = `<span title="${esc(v.reason)}">${badge(v.valid ? 'VALID' : 'INVALID')}</span>`;
+        toast(v.reason, v.valid ? 'ok' : 'err');
+      } catch (e) { toast(e.message, 'err'); } }));
+  };
+  $('#sq').oninput = draw; draw();
+};
+
+/* ═══════════ HALAMAN: Log Audit ═══════════ */
+PAGES.audit = async view => {
+  const rows = await authed('adminAudit');
+  if (!view.set(`${pageHead('Log audit', '300 peristiwa terkini')}
+    <div class="mb-4">${searchBox('lq', 'Cari pengguna atau peristiwa…')}</div>
+    <div class="${C.card} relative overflow-hidden"><div class="relative overflow-x-auto"><table class="min-w-full divide-y divide-slate-100">
+      <thead class="bg-slate-50/70"><tr><th class="${C.th}">Masa</th><th class="${C.th}">Pengguna</th><th class="${C.th}">Peristiwa</th><th class="${C.th} hidden md:table-cell">Butiran</th></tr></thead>
+      <tbody id="lRows" class="divide-y divide-slate-100"></tbody></table></div></div>`)) return;
+  const draw = () => {
+    const q = $('#lq').value.toLowerCase();
+    const list = rows.filter(r => !q || [r.staffId, r.event, evLabel(r.event), r.detail].join(' ').toLowerCase().includes(q));
+    $('#lRows').innerHTML = list.length ? list.map(r => `<tr>
+      <td class="${C.td} whitespace-nowrap tabular-nums text-slate-600">${esc(r.time.slice(0, 16))}</td>
+      <td class="${C.td} font-mono text-xs text-slate-700">${esc(r.staffId || '—')}</td>
+      <td class="${C.td}"><span class="inline-flex items-center gap-2 ${evDanger(r.event) ? 'text-rose-700' : 'text-slate-700'}">
+        <span class="h-1.5 w-1.5 rounded-full ${evDanger(r.event) ? 'bg-rose-500' : 'bg-slate-300'}"></span>${esc(evLabel(r.event))}</span></td>
+      <td class="${C.td} hidden max-w-xs truncate text-slate-500 md:table-cell" title="${esc(r.detail)}">${esc(r.detail || '—')}</td></tr>`).join('')
+      : `<tr><td colspan="4">${emptyState('list', 'Tiada peristiwa')}</td></tr>`;
+  };
+  $('#lq').oninput = draw; draw();
+};
+
+/* ═══════════ LOG MASUK PANTAS: terus ke cap jari tanpa skrin tambahan ═══════════ */
+const FAST = { start: null, at: 0, timer: null };
+const fastMe = () => { try { return JSON.parse(localStorage.getItem('fastLogin') || 'null'); } catch (e) { return null; } };
+
+/** Ambil cabaran awal-awal supaya bila butang ditekan, cap jari boleh terus diminta */
+async function prefetchLogin() {
+  try { FAST.start = await api('authStart', { purpose: 'LOGIN' }); FAST.at = Date.now(); } catch (e) { FAST.start = null; }
+}
+
+function setupFastLogin() {
+  const btnEl = $('#fpBtn'), hint = btnEl.nextElementSibling, me = fastMe();
+  if (me) hint.innerHTML = `Log masuk sebagai <b class="text-slate-600">${esc(me.name)}</b> · <button type="button" id="notMe" class="font-medium text-indigo-600 hover:text-indigo-500">Bukan anda?</button>`;
+  const nm = $('#notMe');
+  if (nm) nm.onclick = () => { try { localStorage.removeItem('fastLogin'); } catch (e) {} renderLogin(); };
+  prefetchLogin();
+  clearInterval(FAST.timer);   // cabaran tamat dalam 5 minit → ambil baharu setiap 4 minit
+  FAST.timer = setInterval(() => { if (!$('#fpBtn')) return clearInterval(FAST.timer); prefetchLogin(); }, 240000);
+  btnEl.onclick = () => fastLogin(btnEl);
+}
+
+async function fastLogin(btnEl) {
+  showAlert('lgMsg');
+  const st = FAST.start;
+  if (!st || Date.now() - FAST.at > 270000) { prefetchLogin(); return doLogin({}, btnEl); }   // sandaran: cara biasa
+  FAST.start = null;
+  const me = fastMe();
+  let a;
+  try {   // dipanggil terus dari klik → telefon terus minta cap jari
+    a = await navigator.credentials.get({ publicKey: {
+      challenge: b64u.dec(st.publicKey.challenge), rpId: st.publicKey.rpId, timeout: 60000, userVerification: 'required',
+      // Jika peranti ini ingat passkey anda → terus cap jari. Jika belum → telefon tunjuk senarai (sekali sahaja)
+      allowCredentials: me ? [{ type: 'public-key', id: b64u.dec(me.credId) }] : []
+    }});
+  } catch (e) {
+    prefetchLogin();
+    return showAlert('lgMsg', webauthnError(e) + (me ? ' Jika passkey telah dipadam dari telefon, klik "Bukan anda?".' : ''));
+  }
+  busy(btnEl, async () => {
+    try {
+      const out = await api('authFinish', { challengeId: st.challengeId, credential: {
+        id: a.id, clientDataJSON: b64u.enc(a.response.clientDataJSON),
+        authenticatorData: b64u.enc(a.response.authenticatorData), signature: b64u.enc(a.response.signature) } });
+      try { localStorage.setItem('fastLogin', JSON.stringify({ credId: a.id, name: out.staff.name })); } catch (e) {}
+      finishLogin(out);
+    } catch (e) {
+      if (/tidak dikenali|tidak aktif/.test(e.message)) { try { localStorage.removeItem('fastLogin'); } catch (x) {} }
+      prefetchLogin(); showAlert('lgMsg', e.message);
+    }
+  });
+}
+
+/* ═══════════ ENJIN WAJAH (Human, dimuat hanya bila diperlukan) ═══════════ */
+const HUMAN_URL = window.HUMAN_BASE || 'https://cdn.jsdelivr.net/npm/@vladmandic/human@3.3.6';
+const MATCH_OPTS = { order: 2, multiplier: 25, min: 0.2, max: 0.8 };   // tetapan rasmi untuk model faceres
+let humanP = null;
+function loadHuman() {
+  if (!humanP) humanP = (async () => {
+    const H = await import(HUMAN_URL + '/dist/human.esm.js');
+    const human = new H.Human({
+      modelBasePath: HUMAN_URL + '/models/', backend: 'webgl', debug: false, cacheSensitivity: 0,
+      filter: { enabled: true, flip: false },
+      face: { enabled: true, detector: { rotation: true, maxDetected: 10, minConfidence: 0.5, return: false },
+        mesh: { enabled: true }, iris: { enabled: false }, emotion: { enabled: false }, attention: { enabled: false },
+        description: { enabled: true }, antispoof: { enabled: true }, liveness: { enabled: true } },
+      body: { enabled: false }, hand: { enabled: false }, object: { enabled: false }, gesture: { enabled: false }, segmentation: { enabled: false }
+    });
+    const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('tamat masa (semak sambungan internet / CDN jsdelivr tidak disekat)')), 90000));
+    await Promise.race([human.load(), timeout]);
+    const need = ['blazeface', 'facemesh', 'faceres'], have = human.models.loaded().join(' ');
+    const miss = need.filter(n => !have.includes(n));
+    if (miss.length) throw new Error('model tidak dapat dimuat turun: ' + miss.join(', ') + '. Pastikan cdn.jsdelivr.net tidak disekat oleh rangkaian.');
+    await Promise.race([human.warmup(), timeout]);
+    return human;
+  })().catch(e => { humanP = null; throw new Error('Gagal memuat model pengecaman wajah: ' + e.message); });
+  return humanP;
+}
+const encDesc = d => b64u.enc(new Float32Array(d).buffer);
+const decDesc = s => Array.from(new Float32Array(b64u.dec(s)));
+const validFaces = res => (res.face || []).filter(f => f.embedding && f.embedding.length === 1024);
+
+async function openCamera(video, deviceId, facing = 'user') {
+  if (video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
+  const constraints = { audio: false, video: deviceId ? { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
+    : { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 } } };
+  try { video.srcObject = await navigator.mediaDevices.getUserMedia(constraints); }
+  catch (e) { throw new Error(e.name === 'NotAllowedError' ? 'Akses kamera ditolak. Benarkan kamera pada browser.' : 'Kamera tidak dapat dibuka: ' + e.message); }
+  await video.play();
+  await new Promise(r => video.videoWidth ? r() : video.onloadedmetadata = r);
+}
+function stopCamera(video) { if (video && video.srcObject) { video.srcObject.getTracks().forEach(t => t.stop()); video.srcObject = null; } }
+
+/* ═══════════ HALAMAN: Wajah Saya (daftar sendiri + persetujuan) ═══════════ */
+PAGES.face = async view => {
+  const st = await authed('faceMyStatus');
+  const has = st.self + st.passport > 0;
+  if (!view.set(`${pageHead('Wajah Saya', 'Daftar wajah untuk merekod kehadiran di kiosk webcam pejabat')}
+    ${st.pendingConsent ? `<div class="mb-6 rounded-2xl bg-amber-50 p-5 ring-1 ring-amber-600/20">
+      <div class="flex gap-3">${ico('alert', 'h-5 w-5 shrink-0 text-amber-600')}<div class="flex-1">
+        <p class="font-medium text-amber-900">Persetujuan diperlukan</p>
+        <p class="mt-1 text-sm text-amber-800">Admin telah menyediakan templat wajah anda daripada gambar pasport untuk kehadiran kiosk. Templat ini <b>tidak akan digunakan</b> sehingga anda bersetuju.</p>
+        <div class="mt-3 flex flex-wrap gap-2">${btn('primary', 'Saya bersetuju', 'id="cAccept"')}${btn('secondary', 'Tolak & padam', 'id="cReject"')}</div></div></div></div>` : ''}
+    <div class="grid gap-6 lg:grid-cols-5">
+      <section class="${C.card} p-5 sm:p-6 lg:col-span-3">
+        <div class="flex items-start gap-4"><span class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${has ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}">${ico('face', 'h-6 w-6')}</span>
+          <div><h2 class="text-base font-semibold text-slate-900">${has ? 'Wajah anda telah didaftarkan' : 'Wajah belum didaftarkan'}</h2>
+          <p class="mt-1 text-sm text-slate-500">${has ? `${st.self ? st.self + ' sampel dari kamera' : ''}${st.self && st.passport ? ' · ' : ''}${st.passport ? 'gambar pasport' + (st.pendingConsent ? ' (menunggu persetujuan)' : '') : ''} · dikemas kini ${esc(st.updatedAt.slice(0, 10))}`
+            : 'Daftar sekali sahaja. Selepas itu, anda hanya perlu berdiri di hadapan kiosk.'}</p></div></div>
+        <div class="mt-6 rounded-xl bg-slate-50 p-4 text-sm text-slate-600 ring-1 ring-slate-200/70">
+          <p class="font-medium text-slate-900">Notis privasi data biometrik</p>
+          <ul class="mt-2 list-disc space-y-1 pl-5">
+            <li>Tujuan: merekod kehadiran melalui kiosk webcam di pejabat sahaja.</li>
+            <li>Yang disimpan: <b>kod matematik wajah</b> (1024 nombor). <b>Gambar anda tidak disimpan</b> dan tidak dihantar ke pelayan.</li>
+            <li>Akses: sistem kehadiran organisasi dan pentadbir sistem sahaja.</li>
+            <li>Anda boleh menarik balik persetujuan dan memadam data wajah pada bila-bila masa di halaman ini.</li></ul></div>
+        <label class="mt-5 flex items-start gap-3"><input id="consent" type="checkbox" class="mt-0.5 h-4 w-4 rounded border-slate-300 accent-indigo-600">
+          <span class="text-sm text-slate-700">Saya telah membaca notis di atas dan <b>bersetuju</b> data biometrik wajah saya diproses untuk tujuan kehadiran.</span></label>
+        <div class="mt-5 flex flex-wrap gap-2">${btn('primary', ico('face') + (st.self ? 'Daftar semula wajah' : 'Daftar wajah sekarang'), 'id="enrollBtn" disabled')}
+          ${has ? btn('secondary', ico('trash', 'h-4 w-4') + 'Padam data wajah saya', 'id="delFace"') : ''}</div>
+      </section>
+      <section class="${C.card} p-5 sm:p-6 lg:col-span-2">
+        <h2 class="text-base font-semibold text-slate-900">Petua untuk hasil terbaik</h2>
+        <ul class="mt-3 space-y-3 text-sm text-slate-600">${[['Cahaya terang dari hadapan, elakkan cahaya dari belakang', 'sun'], ['Pandang terus ke kamera, jarak 30–60 cm', 'face'], ['Tanggalkan cermin mata gelap & pelitup muka', 'alert'], ['Daftar semula jika penampilan berubah ketara', 'refresh']]
+          .map(([t, i]) => `<li class="flex gap-3">${ico(i === 'sun' ? 'clock' : i, 'h-4 w-4 mt-0.5 text-slate-400')}<span>${t}</span></li>`).join('')}</ul></section></div>`)) return;
+
+  $('#consent').onchange = e => { $('#enrollBtn').disabled = !e.target.checked; };
+  $('#enrollBtn').onclick = () => enrollFace();
+  if ($('#cAccept')) $('#cAccept').onclick = e => busy(e.currentTarget, async () => { await authed('faceConsent', { accept: true }); toast('Terima kasih. Templat wajah diaktifkan.'); renderPage(); });
+  if ($('#cReject')) $('#cReject').onclick = e => busy(e.currentTarget, async () => { await authed('faceConsent', { accept: false }); toast('Templat pasport dipadam.'); renderPage(); });
+  if ($('#delFace')) $('#delFace').onclick = async () => {
+    if (!(await confirmDialog({ title: 'Padam data wajah?', message: 'Semua templat wajah anda akan dipadam dan anda tidak lagi boleh merekod kehadiran melalui kiosk sehingga mendaftar semula.', confirmText: 'Padam', danger: true }))) return;
+    try { await authed('faceDeleteMine'); toast('Data wajah dipadam'); renderPage(); } catch (e) { toast(e.message, 'err'); }
+  };
+};
+
+function enrollFace() {
+  const N = 3;
+  const m = openModal(`${modalHead('Daftar wajah', 'Pandang kamera. Sampel diambil secara automatik.')}
+    <div class="px-6 py-5">
+      <div class="relative mx-auto aspect-square w-full max-w-xs overflow-hidden rounded-full bg-slate-900 ring-4 ring-slate-100" id="ringBox">
+        <video id="ev" playsinline muted class="h-full w-full object-cover [transform:scaleX(-1)]"></video>
+        <div id="evMsg" class="absolute inset-x-0 bottom-4 mx-auto w-max max-w-[90%] rounded-full bg-black/60 px-3 py-1 text-center text-xs text-white">Memuat model…</div></div>
+      <div class="mt-5 flex justify-center gap-2" id="dots">${Array.from({ length: N }, () => '<span class="h-2.5 w-8 rounded-full bg-slate-200"></span>').join('')}</div>
+      <div id="efErr" class="mt-4 hidden rounded-lg bg-rose-50 px-3 py-2.5 text-sm text-rose-700"></div></div>
+    ${modalFoot(btn('secondary', 'Batal', 'data-close'))}`, { size: 'sm', onClose: () => { done = true; stopCamera(m.q('#ev')); } });
+  let done = false;
+  const msg = t => { m.q('#evMsg').textContent = t; };
+  (async () => {
+    try {
+      const human = await loadHuman();
+      const video = m.q('#ev');
+      await openCamera(video, null, 'user');
+      const samples = []; let lastAt = 0;
+      while (!done && samples.length < N) {
+        const res = await human.detect(video);
+        const faces = validFaces(res);
+        const vw = video.videoWidth;
+        if (!faces.length) msg('Wajah tidak dikesan');
+        else if (faces.length > 1) msg('Hanya seorang di hadapan kamera');
+        else if (faces[0].box[2] < vw * 0.2) msg('Dekatkan wajah ke kamera');
+        else if (Math.abs((faces[0].rotation && faces[0].rotation.angle.yaw) || 0) > 0.35) msg('Pandang terus ke kamera');
+        else if (Date.now() - lastAt > 700) {
+          samples.push({ d: encDesc(faces[0].embedding), q: Math.round(((faces[0].real || 0) + (faces[0].live || 0)) * 50) });
+          lastAt = Date.now();
+          $$('#dots span', m.el).forEach((d, i) => d.className = 'h-2.5 w-8 rounded-full ' + (i < samples.length ? 'bg-emerald-500' : 'bg-slate-200'));
+          msg(samples.length < N ? 'Bagus! Gerakkan kepala sedikit…' : 'Selesai');
+        }
+        await new Promise(r => setTimeout(r, 60));
+      }
+      if (done) return;
+      stopCamera(video);
+      m.q('#ringBox').classList.replace('ring-slate-100', 'ring-emerald-200');
+      msg('Menyimpan…');
+      await authed('faceEnroll', { consent: true, descriptors: samples.map(s => s.d), quality: Math.round(samples.reduce((a, s) => a + s.q, 0) / N) });
+      done = true; m.close(); toast('Wajah anda telah didaftarkan'); renderPage();
+    } catch (e) { stopCamera(m.q('#ev')); const el = m.q('#efErr'); el.textContent = e.message; el.classList.remove('hidden'); msg('Ralat'); }
+  })();
+}
+
+/* ═══════════ HALAMAN: Wajah & Kiosk (admin) ═══════════ */
+PAGES.faces = async view => {
+  const [kiosks, faces, locs] = await Promise.all([authed('adminKiosks'), authed('adminFaces'), authed('adminLocations')]);
+  S.locs = locs;
+  S.faceFilter = S.faceFilter || '';
+  const enrolled = faces.filter(f => f.self || f.passport).length;
+  if (!view.set(`${pageHead('Wajah & Kiosk', `${enrolled} / ${faces.length} staf aktif mempunyai templat wajah`,
+      btn('secondary', ico('download', 'h-4 w-4') + 'Import gambar pasport', 'id="impBtn"') + btn('primary', ico('plus') + 'Tambah kiosk', 'id="addKiosk"'))}
+    <section class="${C.card} mb-6">
+      <div class="border-b border-slate-100 px-5 py-4 sm:px-6"><h2 class="text-base font-semibold text-slate-900">Kiosk webcam</h2>
+        <p class="mt-0.5 text-sm text-slate-500">Notebook / komputer dengan webcam di pintu masuk. Setiap kiosk diaktifkan dengan link rahsia.</p></div>
+      ${kiosks.length ? `<ul class="divide-y divide-slate-100">${kiosks.map(k => `<li class="flex items-center gap-4 px-5 py-4 sm:px-6">
+        <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${k.status === 'AKTIF' ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-400'}">${ico('scan')}</span>
+        <div class="min-w-0 flex-1"><p class="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-900">${esc(k.name)} ${badge(k.status === 'AKTIF' ? 'AKTIF' : 'TIDAK_AKTIF')}</p>
+          <p class="text-xs text-slate-500">${esc(k.id)} · ${k.location ? esc(k.location) : 'Tiada lokasi'} · ${k.lastSeen ? 'aktif terakhir ' + esc(k.lastSeen.slice(0, 16)) : 'belum pernah disambung'}</p></div>
+        <button data-km="${esc(k.id)}" class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Tindakan">${ico('dots')}</button></li>`).join('')}</ul>`
+        : emptyState('scan', 'Belum ada kiosk', 'Tambah kiosk, kemudian buka link aktivasi pada notebook di pintu masuk.')}
+    </section>
+    <section class="${C.card}">
+      <div class="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+        <div><h2 class="text-base font-semibold text-slate-900">Templat wajah staf</h2><p class="mt-0.5 text-sm text-slate-500">Hanya kod matematik wajah disimpan, bukan gambar.</p></div>
+        <div class="flex gap-1.5">${[['', 'Semua'], ['none', 'Tiada wajah'], ['pending', 'Menunggu persetujuan']].map(([k, l]) =>
+          `<button data-ff="${k}" class="rounded-full px-3 py-1.5 text-xs font-medium ring-1 ring-inset ${S.faceFilter === k ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white text-slate-600 ring-slate-300 hover:bg-slate-50'}">${l}</button>`).join('')}</div></div>
+      <div class="relative overflow-x-auto"><table class="min-w-full divide-y divide-slate-100">
+        <thead class="bg-slate-50/70"><tr><th class="${C.th}">Staf</th><th class="${C.th}">Kamera</th><th class="${C.th}">Pasport</th><th class="${C.th} hidden md:table-cell">Dikemas kini</th><th class="${C.th} w-12"></th></tr></thead>
+        <tbody class="divide-y divide-slate-100">${faces.filter(f => !S.faceFilter || (S.faceFilter === 'none' ? !f.self && !f.passport && !f.pending : f.pending)).map(f => `<tr>
+          <td class="${C.td}"><p class="font-medium text-slate-900">${esc(f.name)}</p><p class="text-xs text-slate-500">${esc(f.id)} · ${esc(f.email)}</p></td>
+          <td class="${C.td}">${f.self ? `<span class="text-emerald-600">${ico('check', 'h-4 w-4 inline')} ${f.self} sampel</span>` : '<span class="text-slate-400">—</span>'}</td>
+          <td class="${C.td}">${f.passport ? `<span class="text-emerald-600">${ico('check', 'h-4 w-4 inline')} Aktif</span>` : f.pending ? badge('MENUNGGU') : '<span class="text-slate-400">—</span>'}</td>
+          <td class="${C.td} hidden text-slate-500 md:table-cell">${esc((f.updatedAt || '—').slice(0, 16))}</td>
+          <td class="${C.td} text-right">${f.self || f.passport || f.pending ? `<button data-fd="${esc(f.id)}" class="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600" title="Padam templat">${ico('trash', 'h-4 w-4')}</button>` : ''}</td></tr>`).join('')
+          || `<tr><td colspan="5">${emptyState('face', 'Tiada staf dalam tapisan ini')}</td></tr>`}</tbody></table></div></section>`)) return;
+
+  $('#addKiosk').onclick = () => kioskForm(null);
+  $('#impBtn').onclick = () => passportImport(faces);
+  $$('[data-ff]').forEach(b => b.onclick = () => { S.faceFilter = b.dataset.ff; renderPage(); });
+  $$('[data-fd]').forEach(b => b.onclick = async () => {
+    const f = faces.find(x => x.id === b.dataset.fd);
+    if (!(await confirmDialog({ title: 'Padam templat wajah?', message: `Semua templat wajah ${f.name} akan dipadam.`, confirmText: 'Padam', danger: true }))) return;
+    try { await authed('adminFaceDelete', { staffId: f.id }); toast('Templat dipadam'); renderPage(); } catch (e) { toast(e.message, 'err'); }
+  });
+  $$('[data-km]').forEach(b => b.onclick = e => { e.stopPropagation(); const k = kiosks.find(x => x.id === b.dataset.km);
+    openMenu(b, [
+      { label: 'Edit kiosk', icon: 'edit', onClick: () => kioskForm(k) },
+      { label: 'Jana link aktivasi baharu', icon: 'link', onClick: async () => {
+        if (!(await confirmDialog({ title: 'Jana link baharu?', message: 'Link lama akan berhenti berfungsi serta-merta. Kiosk perlu dibuka semula dengan link baharu.', confirmText: 'Jana link' }))) return;
+        try { const r = await authed('adminKioskSave', { isNew: false, newToken: true, kiosk: { id: k.id, name: k.name, locationId: k.locationId, status: k.status } }); kioskLinkModal(r.link); renderPage(); } catch (err) { toast(err.message, 'err'); } } },
+      { label: k.status === 'AKTIF' ? 'Nyahaktifkan' : 'Aktifkan semula', icon: k.status === 'AKTIF' ? 'ban' : 'play', onClick: async () => {
+        try { await authed('adminKioskSave', { isNew: false, kiosk: { id: k.id, name: k.name, locationId: k.locationId, status: k.status === 'AKTIF' ? 'TIDAK_AKTIF' : 'AKTIF' } }); toast('Status kiosk dikemas kini'); renderPage(); } catch (err) { toast(err.message, 'err'); } } },
+      '-',
+      { label: 'Padam kiosk', icon: 'trash', danger: true, onClick: async () => {
+        if (!(await confirmDialog({ title: 'Padam kiosk?', message: `“${k.name}” akan dipadam dan tidak boleh digunakan lagi.`, confirmText: 'Padam', danger: true }))) return;
+        try { await authed('adminKioskDelete', { id: k.id }); toast('Kiosk dipadam'); renderPage(); } catch (err) { toast(err.message, 'err'); } } }]); });
+};
+
+function kioskForm(k) {
+  const isNew = !k; k = k || { name: '', locationId: '', status: 'AKTIF' };
+  const m = openModal(`${modalHead(isNew ? 'Tambah kiosk' : 'Edit kiosk', 'Peranti webcam untuk kehadiran wajah')}
+    <form id="kf" class="space-y-4 px-6 py-5">
+      <div><label class="${C.label}">Nama kiosk</label><input name="name" class="${C.input}" required value="${esc(k.name)}" placeholder="cth. Lobi Utama Aras G"></div>
+      <div><label class="${C.label}">Lokasi</label><select name="loc" class="${C.input}"><option value="">— Tiada —</option>
+        ${(S.locs || []).map(l => `<option value="${esc(l.id)}" ${k.locationId === l.id ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}</select>
+        <p class="mt-1.5 text-xs text-slate-500">Rekod kehadiran dari kiosk ini akan ditanda di lokasi tersebut.</p></div>
+      <div id="kfErr" class="hidden rounded-lg bg-rose-50 px-3 py-2.5 text-sm text-rose-700"></div></form>
+    ${modalFoot(btn('secondary', 'Batal', 'data-close') + `<button type="submit" form="kf" class="${C.btn} ${C.primary}">${isNew ? 'Cipta & jana link' : 'Simpan'}</button>`)}`);
+  m.q('#kf').onsubmit = e => { e.preventDefault(); const d = new FormData(e.target);
+    busy(m.q('[form=kf]'), async () => {
+      try { const r = await authed('adminKioskSave', { isNew, kiosk: { id: k.id, name: d.get('name'), locationId: d.get('loc'), status: k.status } });
+        m.close(); if (r.link) kioskLinkModal(r.link); else toast('Kiosk dikemas kini'); renderPage(); } catch (err) { formError(m, 'kfErr', err); }
+    }); };
+}
+
+function kioskLinkModal(link) {
+  const m = openModal(`${modalHead('Link aktivasi kiosk', 'Dipaparkan sekali sahaja. Simpan dengan selamat.')}
+    <div class="space-y-4 px-6 py-5">
+      <ol class="list-decimal space-y-1.5 pl-5 text-sm text-slate-600">
+        <li>Buka link ini pada <b>notebook / komputer kiosk</b> (Chrome atau Edge).</li>
+        <li>Benarkan akses kamera apabila diminta.</li>
+        <li>Klik ikon skrin penuh. Kiosk akan kekal aktif walaupun browser ditutup dan dibuka semula.</li></ol>
+      <div class="flex gap-2"><input readonly id="kl" class="${C.input} font-mono text-xs" value="${esc(link)}">${btn('secondary', ico('copy', 'h-4 w-4'), 'id="klc" title="Salin"')}</div>
+      <p class="text-xs text-slate-500">Sesiapa yang ada link ini boleh menjadikan peranti mereka kiosk. Jika bocor, jana link baharu.</p></div>
+    ${modalFoot(btn('primary', 'Selesai', 'data-close'))}`);
+  m.q('#klc').onclick = () => navigator.clipboard.writeText(link).then(() => toast('Link disalin')).catch(() => m.q('#kl').select());
+}
+
+/** Import gambar pasport: diproses dalam browser, hanya embedding dihantar */
+function passportImport(faces) {
+  const byKey = {};
+  faces.forEach(f => { byKey[f.id.toLowerCase()] = f; if (f.email) { byKey[f.email.toLowerCase()] = f; byKey[f.email.toLowerCase().split('@')[0]] = byKey[f.email.toLowerCase().split('@')[0]] || f; } });
+  const m = openModal(`${modalHead('Import gambar pasport', 'Gambar diproses dalam browser ini. Gambar tidak dimuat naik.')}
+    <div class="space-y-4 px-6 py-5">
+      <div class="rounded-xl bg-slate-50 p-4 text-sm text-slate-600 ring-1 ring-slate-200/70">
+        <p class="font-medium text-slate-900">Nama fail mesti sepadan dengan staf</p>
+        <p class="mt-1">Gunakan <b>Staff ID</b> atau <b>emel</b> sebagai nama fail, contohnya <code class="rounded bg-white px-1">S0002.jpg</code> atau <code class="rounded bg-white px-1">aina@agensi.gov.my.jpg</code>. Format JPG / PNG, satu wajah setiap gambar.</p></div>
+      <div class="flex flex-wrap gap-2">
+        <label class="${C.btn} ${C.secondary} cursor-pointer">${ico('doc', 'h-4 w-4')}Pilih fail<input id="pf" type="file" accept="image/jpeg,image/png" multiple class="sr-only"></label>
+        <label class="${C.btn} ${C.secondary} cursor-pointer">${ico('download', 'h-4 w-4')}Pilih folder<input id="pd" type="file" webkitdirectory multiple class="sr-only"></label></div>
+      <div id="pList" class="max-h-64 divide-y divide-slate-100 overflow-y-auto rounded-lg ring-1 ring-slate-200 empty:hidden"></div>
+      <p id="pSum" class="text-sm text-slate-500"></p>
+      <label class="flex items-start gap-3 rounded-lg bg-amber-50 p-3"><input id="attest" type="checkbox" class="mt-0.5 h-4 w-4 rounded border-slate-300 accent-indigo-600">
+        <span class="text-sm text-amber-900"><b>Saya mengesahkan persetujuan bertulis</b> staf berkenaan telah diperoleh. Jika tidak ditanda, setiap staf perlu menekan "Saya bersetuju" di halaman Wajah Saya sebelum templat digunakan.</span></label>
+      <div id="piErr" class="hidden rounded-lg bg-rose-50 px-3 py-2.5 text-sm text-rose-700"></div></div>
+    ${modalFoot(btn('secondary', 'Tutup', 'data-close') + btn('primary', 'Simpan templat', 'id="pSave" disabled'))}`, { size: 'lg' });
+
+  let items = [];
+  const row = (name, staff, state, tone) => `<div class="flex items-center gap-3 px-3 py-2 text-sm"><span class="min-w-0 flex-1 truncate font-mono text-xs text-slate-600">${esc(name)}</span>
+    <span class="hidden w-40 truncate text-slate-700 sm:block">${staff ? esc(staff.name) : '—'}</span><span class="w-44 text-right text-xs ${tone}">${esc(state)}</span></div>`;
+  const handle = async files => {
+    files = [...files].filter(f => /\.(jpe?g|png)$/i.test(f.name));
+    if (!files.length) return;
+    items = []; m.q('#pSave').disabled = true;
+    const list = m.q('#pList'); list.innerHTML = files.map(f => row(f.name, null, 'Menunggu…', 'text-slate-400')).join('');
+    let human;
+    try { m.q('#pSum').textContent = 'Memuat model pengecaman wajah…'; human = await loadHuman(); }
+    catch (e) { return formError(m, 'piErr', e); }
+    let ok = 0;
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i], key = f.name.replace(/\.(jpe?g|png)$/i, '').trim().toLowerCase();
+      const staff = byKey[key];
+      let state = '', tone = 'text-rose-600';
+      if (!staff) state = 'Staf tidak dijumpai';
+      else {
+        try {
+          const bmp = await createImageBitmap(f);
+          const cv = document.createElement('canvas'); cv.width = bmp.width; cv.height = bmp.height; cv.getContext('2d').drawImage(bmp, 0, 0);
+          const fcs = validFaces(await human.detect(cv));
+          if (!fcs.length) state = 'Wajah tidak dikesan';
+          else if (fcs.length > 1) state = fcs.length + ' wajah — perlu satu sahaja';
+          else if (fcs[0].box[2] < 80) state = 'Wajah terlalu kecil';
+          else { items.push({ staffId: staff.id, descriptor: encDesc(fcs[0].embedding), quality: Math.round(fcs[0].score * 100) }); state = 'Sedia'; tone = 'text-emerald-600'; ok++; }
+        } catch (e) { state = 'Gagal dibaca'; }
+      }
+      list.children[i].outerHTML = row(f.name, staff, state, tone);
+      m.q('#pSum').textContent = `Diproses ${i + 1} / ${files.length} · ${ok} sedia`;
+    }
+    m.q('#pSave').disabled = !items.length;
+  };
+  m.q('#pf').onchange = e => handle(e.target.files);
+  m.q('#pd').onchange = e => handle(e.target.files);
+  m.q('#pSave').onclick = e => busy(e.currentTarget, async () => {
+    try {
+      let saved = 0;
+      for (let i = 0; i < items.length; i += 25) {
+        const r = await authed('adminFaceImport', { items: items.slice(i, i + 25), attested: m.q('#attest').checked });
+        saved += r.results.filter(x => x.ok).length;
+      }
+      m.close(); toast(`${saved} templat pasport disimpan${m.q('#attest').checked ? '' : ' (menunggu persetujuan staf)'}`); renderPage();
+    } catch (err) { formError(m, 'piErr', err); }
+  });
+}
+
+/* ═══════════ MOD KIOSK (skrin penuh, pelbagai wajah) ═══════════ */
+const K = { token: null, running: false, people: [], db: [], cfg: {}, hits: {}, sent: {}, recent: [], human: null, mirror: true, refreshAt: 0, info: null };
+
+function renderKiosk() {
+  document.body.className = 'h-full bg-slate-950 font-sans text-white antialiased';
+  root.innerHTML = `<div class="fixed inset-0 flex flex-col lg:flex-row">
+    <div class="relative min-h-0 flex-1 overflow-hidden bg-black">
+      <video id="kv" playsinline muted class="absolute inset-0 h-full w-full object-cover"></video>
+      <canvas id="kc" class="absolute inset-0 h-full w-full object-cover"></canvas>
+      <div class="absolute left-4 top-4 flex items-center gap-2">
+        <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600">${ico('scan', 'h-5 w-5')}</div>
+        <span id="kStatus" class="rounded-full bg-black/60 px-3 py-1.5 text-sm backdrop-blur">Memulakan…</span></div>
+      <div class="absolute right-4 top-4 flex gap-2">
+        <button id="kFull" class="rounded-xl bg-black/50 p-2.5 backdrop-blur hover:bg-black/70" title="Skrin penuh">${ico('scan', 'h-5 w-5')}</button>
+        <button id="kSet" class="rounded-xl bg-black/50 p-2.5 backdrop-blur hover:bg-black/70" title="Tetapan">${ico('cog', 'h-5 w-5')}</button></div>
+      <div id="kToast" class="pointer-events-none absolute inset-x-0 bottom-8 flex justify-center"></div>
+    </div>
+    <aside class="flex w-full shrink-0 flex-col border-t border-white/10 bg-slate-900 p-5 lg:w-96 lg:border-l lg:border-t-0 lg:p-8">
+      <p id="kClock" class="text-5xl font-semibold tabular-nums tracking-tight lg:text-6xl">--:--</p>
+      <p id="kDate" class="mt-1 text-slate-400"></p>
+      <p id="kName" class="mt-4 flex items-center gap-2 text-sm text-slate-300">${ico('pin', 'h-4 w-4')}<span>—</span></p>
+      <p class="mt-8 text-xs font-semibold uppercase tracking-wider text-slate-500">Rekod terkini</p>
+      <ul id="kRecent" class="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto"><li class="text-sm text-slate-500">Belum ada rekod.</li></ul>
+      <p id="kFoot" class="mt-4 text-xs text-slate-500"></p></aside></div>`;
+  const tick = () => { const d = new Date();
+    $('#kClock').textContent = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kuala_Lumpur' });
+    $('#kDate').textContent = d.toLocaleDateString('ms-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kuala_Lumpur' }); };
+  tick(); setInterval(tick, 1000);
+  $('#kFull').onclick = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {});
+  $('#kSet').onclick = kioskSettings;
+  startKiosk();
+}
+
+const kStatus = t => { const el = $('#kStatus'); if (el) el.textContent = t; };
+
+async function kioskRefresh() {
+  const d = await api('kioskInit', { kioskToken: K.token });
+  K.info = d.kiosk; K.cfg = d.cfg; K.people = d.people; K.refreshAt = Date.now();
+  K.db = []; d.people.forEach(p => p.descs.forEach(s => K.db.push({ staffId: p.staffId, name: p.name, desc: decDesc(s) })));
+  $('#kName span').textContent = d.kiosk.name + (d.kiosk.location ? ' · ' + d.kiosk.location : '');
+  $('#kFoot').textContent = `${d.people.length} staf berdaftar wajah · dikemas kini ${d.now.slice(11, 16)}`;
+}
+
+async function startKiosk() {
+  try {
+    kStatus('Menyambung ke pelayan…'); await kioskRefresh();
+    kStatus('Memuat model pengecaman wajah…'); K.human = await loadHuman();
+    kStatus('Membuka kamera…'); await openCamera($('#kv'), store.get('kioskCam'));
+    K.mirror = store.get('kioskMirror') !== '0';
+    $('#kv').style.transform = K.mirror ? 'scaleX(-1)' : '';
+    try { if (navigator.wakeLock) await navigator.wakeLock.request('screen'); } catch (e) {}
+    K.running = true; kStatus('Sedia — sila hadap kamera'); kioskLoop();
+  } catch (e) {
+    kStatus('Ralat');
+    $('#kToast').innerHTML = `<div class="pointer-events-auto max-w-md rounded-2xl bg-rose-600 px-6 py-4 text-center shadow-xl"><p class="font-semibold">Kiosk tidak dapat dimulakan</p><p class="mt-1 text-sm text-rose-100">${esc(e.message)}</p>
+      <button onclick="location.reload()" class="mt-3 rounded-lg bg-white/20 px-4 py-2 text-sm font-semibold hover:bg-white/30">Cuba lagi</button></div>`;
+  }
+}
+
+function matchFace(emb) {
+  let best = null, second = 0;
+  const perStaff = {};
+  for (const r of K.db) {
+    const s = K.human.match.similarity(emb, r.desc, MATCH_OPTS);
+    if (!perStaff[r.staffId] || s > perStaff[r.staffId].s) perStaff[r.staffId] = { s, r };
+  }
+  Object.values(perStaff).forEach(x => { if (!best || x.s > best.s) { if (best) second = Math.max(second, best.s); best = x; } else second = Math.max(second, x.s); });
+  if (!best || best.s < K.cfg.threshold || best.s - second < 0.05) return null;
+  return { staffId: best.r.staffId, name: best.r.name, score: best.s };
+}
+
+async function kioskLoop() {
+  if (!K.running) return;
+  const video = $('#kv'), cv = $('#kc');
+  if (!video) { K.running = false; return; }
+  if (Date.now() - K.refreshAt > 10 * 60000) kioskRefresh().catch(() => {});
+  const t0 = Date.now();
+  try {
+    const res = await K.human.detect(video);
+    K.frameMs = K.frameMs ? 0.7 * K.frameMs + 0.3 * (Date.now() - t0) : Date.now() - t0;   // kelajuan peranti
+    const W = video.videoWidth, Hh = video.videoHeight;
+    if (cv.width !== W) { cv.width = W; cv.height = Hh; }
+    const g = cv.getContext('2d'); g.clearRect(0, 0, W, Hh);
+    const now = Date.now(), faces = validFaces(res);
+    kStatus(faces.length ? `${faces.length} wajah dikesan` : 'Sedia — sila hadap kamera');
+    for (const f of faces) {
+      let [x, y, w, h] = f.box;
+      const edge = x <= 2 || y <= 2 || x + w >= W - 2 || y + h >= Hh - 2;   // wajah terpotong → embedding kurang tepat
+      if (K.mirror) x = W - x - w;
+      let label = 'Tidak dikenali', color = '#94a3b8';
+      const spoof = K.cfg.antispoofMin > 0 && Math.min(f.real || 0, f.live || 0) < K.cfg.antispoofMin;
+      if (w < 70) { label = 'Sila dekat'; }
+      else if (edge) { label = 'Ke tengah sedikit'; }
+      else if (spoof) { label = 'Hadap kamera secara langsung'; color = '#f59e0b'; }
+      else {
+        const mt = matchFace(f.embedding);
+        if (mt) {
+          // Sah selepas 2 bingkai berturut-turut (tetingkap ikut kelajuan peranti)
+          const win = Math.max(5000, (K.frameMs || 0) * 2.5);
+          const hit = K.hits[mt.staffId] = (K.hits[mt.staffId] && now - K.hits[mt.staffId].t < win) ? { n: K.hits[mt.staffId].n + 1, t: now } : { n: 1, t: now };
+          const last = K.sent[mt.staffId];
+          if (last && now - last.t < (K.cfg.cooldownMin || 5) * 60000) { label = mt.name + (last.label ? ' · ' + last.label : ''); color = '#10b981'; }
+          else if (hit.n >= 2) { label = mt.name; color = '#10b981'; kioskSend(mt, f.embedding); }
+          else { label = 'Mengesahkan…'; color = '#f59e0b'; }
+        }
+      }
+      g.lineWidth = Math.max(3, W / 300); g.strokeStyle = color;
+      g.beginPath(); g.roundRect ? g.roundRect(x, y, w, h, 16) : g.rect(x, y, w, h); g.stroke();
+      g.font = `600 ${Math.max(16, Math.round(W / 55))}px Inter, system-ui, sans-serif`;
+      const tw = g.measureText(label).width + 20, th = Math.max(28, Math.round(W / 38));
+      const lx = Math.min(Math.max(x + (w - tw) / 2, 4), W - tw - 4), ly = Math.min(y + h - th - 10, Hh - th - 4);   // label di bawah, dalam kotak
+      g.fillStyle = color; g.beginPath(); g.roundRect ? g.roundRect(lx, ly, tw, th, 8) : g.rect(lx, ly, tw, th); g.fill();
+      g.fillStyle = '#fff'; g.fillText(label, lx + 10, ly + th * 0.68);
+    }
+  } catch (e) { /* teruskan gelung */ }
+  setTimeout(kioskLoop, 40);
+}
+
+const STATUS_TXT = { LEWAT: 'Lewat', PULANG_AWAL: 'Pulang awal', HADIR: 'Hadir', BEKERJA: 'Selamat bekerja' };
+async function kioskSend(mt, emb) {
+  K.sent[mt.staffId] = { t: Date.now(), label: '…' };
+  try {
+    const r = await api('kioskPunch', { kioskToken: K.token, staffId: mt.staffId, descriptor: encDesc(emb) });
+    if (r.action === 'REJECT') { delete K.sent[mt.staffId]; return; }
+    if (r.action === 'SKIP') { K.sent[mt.staffId].label = r.reason; return; }
+    const act = r.action === 'IN' ? 'Masuk' : 'Keluar';
+    K.sent[mt.staffId].label = act + ' ' + r.time;
+    const extra = r.action === 'IN' ? (r.late ? `Lewat ${fmtMin(r.late)}` : 'Selamat bekerja') : (r.early ? `Pulang awal ${fmtMin(r.early)}` : 'Terima kasih');
+    K.recent.unshift({ name: r.name, act, time: r.time, extra, warn: !!(r.late || r.early) });
+    K.recent = K.recent.slice(0, 12);
+    $('#kRecent').innerHTML = K.recent.map(x => `<li class="flex items-center gap-3 rounded-xl bg-white/5 px-3 py-2.5">
+      <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-500/20 text-xs font-semibold text-indigo-200">${esc(initials(x.name))}</span>
+      <div class="min-w-0 flex-1"><p class="truncate text-sm font-medium">${esc(x.name)}</p><p class="text-xs ${x.warn ? 'text-amber-300' : 'text-slate-400'}">${esc(x.extra)}</p></div>
+      <div class="text-right"><p class="text-xs font-semibold ${x.act === 'Masuk' ? 'text-emerald-300' : 'text-sky-300'}">${x.act}</p><p class="text-sm tabular-nums text-slate-300">${esc(x.time)}</p></div></li>`).join('');
+    $('#kToast').innerHTML = `<div class="flex items-center gap-4 rounded-2xl bg-emerald-600 px-6 py-4 shadow-2xl">
+      <span class="flex h-12 w-12 items-center justify-center rounded-full bg-white/20">${ico('check', 'h-7 w-7')}</span>
+      <div><p class="text-xl font-semibold">${esc(r.name)}</p><p class="text-emerald-100">Daftar ${act} · ${esc(r.time)} · ${esc(extra)}</p></div></div>`;
+    clearTimeout(K.toastT); K.toastT = setTimeout(() => { const t = $('#kToast'); if (t) t.innerHTML = ''; }, 3500);
+    try { const ac = new (window.AudioContext || window.webkitAudioContext)(), o = ac.createOscillator(), gn = ac.createGain();
+      o.frequency.value = r.action === 'IN' ? 880 : 660; gn.gain.value = 0.08; o.connect(gn).connect(ac.destination); o.start(); o.stop(ac.currentTime + 0.15); } catch (e) {}
+  } catch (e) { delete K.sent[mt.staffId]; kStatus('Ralat rangkaian — cuba semula'); }
+}
+
+async function kioskSettings() {
+  let cams = [];
+  try { cams = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput'); } catch (e) {}
+  const cur = store.get('kioskCam') || '';
+  const m = openModal(`${modalHead('Tetapan kiosk', K.info ? K.info.name : '')}
+    <div class="space-y-4 px-6 py-5 text-slate-800">
+      <div><label class="${C.label}">Kamera</label><select id="ksCam" class="${C.input}"><option value="">Lalai</option>
+        ${cams.map((c, i) => `<option value="${esc(c.deviceId)}" ${c.deviceId === cur ? 'selected' : ''}>${esc(c.label || 'Kamera ' + (i + 1))}</option>`).join('')}</select></div>
+      <label class="flex items-center gap-3"><input id="ksMir" type="checkbox" class="h-4 w-4 accent-indigo-600" ${K.mirror ? 'checked' : ''}><span class="text-sm">Paparan cermin (mirror)</span></label>
+      <div class="border-t border-slate-100 pt-4"><button id="ksExit" class="text-sm font-medium text-rose-600 hover:text-rose-500">Keluar mod kiosk pada peranti ini</button></div></div>
+    ${modalFoot(btn('secondary', 'Tutup', 'data-close') + btn('primary', 'Simpan', 'id="ksSave"'))}`, { size: 'sm' });
+  m.q('#ksSave').onclick = () => { store.set('kioskCam', m.q('#ksCam').value); store.set('kioskMirror', m.q('#ksMir').checked ? '1' : '0'); location.reload(); };
+  m.q('#ksExit').onclick = async () => {
+    if (!(await confirmDialog({ title: 'Keluar mod kiosk?', message: 'Peranti ini perlu dibuka semula dengan link aktivasi untuk menjadi kiosk.', confirmText: 'Keluar', danger: true }))) return;
+    store.del('kioskToken'); location.href = location.pathname;
+  };
+}
+
+/* ═══════════ Permulaan ═══════════ */
+(async function boot() {
+  // Mod kiosk: ?kiosk=<token> (aktivasi) atau ?kiosk (peranti yang sudah diaktifkan)
+  const qs = new URLSearchParams(location.search);
+  if (qs.has('kiosk')) {
+    if (qs.get('kiosk')) { store.set('kioskToken', qs.get('kiosk')); history.replaceState(null, '', location.pathname + '?kiosk'); }
+    K.token = store.get('kioskToken');
+    if (K.token) return renderKiosk();
+  } else if (store.get('kioskToken') && !regToken) {
+    history.replaceState(null, '', location.pathname + '?kiosk'); K.token = store.get('kioskToken'); return renderKiosk();
+  }
+  if (!window.PublicKeyCredential) return renderUnsupported();
+  try { S.cfg = await api('publicConfig'); } catch (e) { /* teruskan tanpa SSO */ }
+  if (regToken) {   // pendaftaran mesti pada telefon yang ada cap jari / Face ID
+    const platform = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().catch(() => false);
+    return platform ? renderRegister() : renderUnsupported();
+  }
+  if (S.token) {
+    try { S.me = (await api('me', { sessionToken: S.token })).staff; return renderShell(); }
+    catch (e) { store.del('session', true); S.token = null; }
+  }
+  renderLogin();
+})();
+</script>
+</body>
+</html>
