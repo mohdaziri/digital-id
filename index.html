@@ -363,7 +363,7 @@ function renderLogin(msg) {
       <p class="text-xs text-slate-500">Belum mendaftar? Gunakan link pendaftaran yang dihantar oleh pentadbir ke emel anda.</p></div>`);
   if (msg) showAlert('lgMsg', msg);
 
-  $('#fpBtn').onclick = e => doLogin({}, e.currentTarget);                       // tanpa ID (passkey boleh dicari)
+  setupFastLogin();                     // tanpa ID (passkey boleh dicari)
   $('#emailForm').onsubmit = e => { e.preventDefault(); doLogin({ login: $('#lgEmail').value.trim() }, $('#emailForm button')); };
   $('#pwBtn').onclick = adminPwLogin;
   if (g) mountGoogle($('#gBtn'), onGoogleLogin, { oneTap: true });
@@ -1006,6 +1006,54 @@ PAGES.audit = async view => {
 };
 
 /* ═══════════ Permulaan ═══════════ */
+/* ═══════════ LOG MASUK PANTAS: terus ke cap jari tanpa skrin tambahan ═══════════ */
+const FAST = { start: null, at: 0, timer: null };
+const fastMe = () => { try { return JSON.parse(localStorage.getItem('fastLogin') || 'null'); } catch (e) { return null; } };
+
+async function prefetchLogin() {
+  try { FAST.start = await api('authStart', { purpose: 'LOGIN' }); FAST.at = Date.now(); } catch (e) { FAST.start = null; }
+}
+
+function setupFastLogin() {
+  const btnEl = $('#fpBtn'), hint = btnEl.nextElementSibling, me = fastMe();
+  if (me) hint.innerHTML = `Log masuk sebagai <b class="text-slate-600">${esc(me.name)}</b> · <button type="button" id="notMe" class="font-medium text-indigo-600 hover:text-indigo-500">Bukan anda?</button>`;
+  const nm = $('#notMe');
+  if (nm) nm.onclick = () => { try { localStorage.removeItem('fastLogin'); } catch (e) {} renderLogin(); };
+  prefetchLogin();
+  clearInterval(FAST.timer);
+  FAST.timer = setInterval(() => { if (!$('#fpBtn')) return clearInterval(FAST.timer); prefetchLogin(); }, 240000);
+  btnEl.onclick = () => fastLogin(btnEl);
+}
+
+async function fastLogin(btnEl) {
+  showAlert('lgMsg');
+  const st = FAST.start;
+  if (!st || Date.now() - FAST.at > 270000) { prefetchLogin(); return doLogin({}, btnEl); }
+  FAST.start = null;
+  const me = fastMe();
+  let a;
+  try {
+    a = await navigator.credentials.get({ publicKey: {
+      challenge: b64u.dec(st.publicKey.challenge), rpId: st.publicKey.rpId, timeout: 60000, userVerification: 'required',
+      allowCredentials: me ? [{ type: 'public-key', id: b64u.dec(me.credId) }] : []
+    }});
+  } catch (e) {
+    prefetchLogin();
+    return showAlert('lgMsg', webauthnError(e) + (me ? ' Jika passkey telah dipadam dari telefon, klik "Bukan anda?".' : ''));
+  }
+  busy(btnEl, async () => {
+    try {
+      const out = await api('authFinish', { challengeId: st.challengeId, credential: {
+        id: a.id, clientDataJSON: b64u.enc(a.response.clientDataJSON),
+        authenticatorData: b64u.enc(a.response.authenticatorData), signature: b64u.enc(a.response.signature) } });
+      try { localStorage.setItem('fastLogin', JSON.stringify({ credId: a.id, name: out.staff.name })); } catch (e) {}
+      finishLogin(out);
+    } catch (e) {
+      if (/tidak dikenali|tidak aktif/.test(e.message)) { try { localStorage.removeItem('fastLogin'); } catch (x) {} }
+      prefetchLogin(); showAlert('lgMsg', e.message);
+    }
+  });
+}
 (async function boot() {
   if (!window.PublicKeyCredential) return renderUnsupported();
   try { S.cfg = await api('publicConfig'); } catch (e) { /* teruskan tanpa SSO */ }
