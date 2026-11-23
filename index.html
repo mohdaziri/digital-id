@@ -319,6 +319,7 @@ function renderLogin(msg) {
         <input id="lgId" class="${C.input} uppercase" autocomplete="username webauthn" autocapitalize="characters" placeholder="S001" required value="${esc(store.get('staffId') || '')}"></div>
       <button type="submit" class="${C.btn} ${C.primary} w-full py-3">${ico('finger')}Log masuk dengan cap jari</button>
     </form>${alertBox('lgMsg')}
+        <button type="button" onclick="adminPwLogin()" class="${C.btn} ${C.ghost} mt-3 w-full">${ico('key', 'h-4 w-4')}Log masuk admin dengan kata laluan</button>
     <p class="mt-6 border-t border-slate-100 pt-5 text-center text-xs text-slate-500">Belum mendaftar? Gunakan link pendaftaran yang dihantar oleh pentadbir ke emel anda.</p>`);
   if (msg) showAlert('lgMsg', msg);
   $('#loginForm').onsubmit = e => {
@@ -896,7 +897,31 @@ PAGES.audit = async view => {
   $('#lq').oninput = draw; draw();
 };
 
-/* ═══════════ Permulaan ═══════════ */
+/* ═══════════ LANGKAH 3: Log masuk admin dengan kata laluan ═══════════ */
+function adminPwLogin() {
+  const m = openModal(`${modalHead('Log masuk admin', 'Guna Staff ID dan kata laluan admin')}
+    <form id="pwf" class="space-y-4 px-6 py-5">
+      <div><label class="${C.label}">Staff ID</label><input name="id" class="${C.input} uppercase" required value="${esc($('#lgId').value)}"></div>
+      <div><label class="${C.label}">Kata laluan</label><input name="pw" type="password" class="${C.input}" required autocomplete="current-password"></div>
+      <div id="pwErr" class="hidden rounded-lg bg-rose-50 px-3 py-2.5 text-sm text-rose-700"></div>
+    </form>
+    ${modalFoot(btn('secondary', 'Batal', 'data-close') + `<button type="submit" form="pwf" class="${C.btn} ${C.primary}">Log masuk</button>`)}`, { size: 'sm' });
+  m.q('#pwf').onsubmit = e => {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    busy(m.q('[form=pwf]'), async () => {
+      try {
+        const out = await api('adminPasswordLogin', { staffId: f.get('id').trim().toUpperCase(), password: f.get('pw') });
+        m.close();
+        store.set('session', out.sessionToken, true);
+        S.token = out.sessionToken; S.me = out.staff;
+        location.hash = '#/home';
+        renderShell();
+      } catch (err) { const el = m.q('#pwErr'); el.textContent = err.message; el.classList.remove('hidden'); }
+    });
+  };
+}
+  /* ═══════════ Permulaan ═══════════ */
 (async function boot() {
   if (!window.PublicKeyCredential) return renderUnsupported();
   if (regToken) {   // pendaftaran mesti pada telefon yang ada cap jari / Face ID
