@@ -635,7 +635,9 @@ const selectBox = (id, opts) => `<select id="${id}" class="${C.input} sm:w-44">$
 
 async function renderPage() {
   closeMenu();
-  modalStack.slice().forEach(m => m.close(true));
+    const route = currentRoute();
+  if (route !== S.lastRoute) modalStack.slice().forEach(m => m.close(true));   // tutup tetingkap hanya bila tukar halaman
+  S.lastRoute = route;
   paintNav();
   const main = $('#main'); if (!main) return;
   const seq = ++S.seq;
