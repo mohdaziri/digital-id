@@ -80,6 +80,7 @@ const P = {
   alert: 'M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0',
   brief: 'M3 7h18v13H3zM8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13h18',
   chevL: 'M15 18l-6-6 6-6',
+  meet: 'M3 4h18v11H3zM8 21l4-6 4 6M7 8h10M7 11h6',
   face: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18M9 10h.01M15 10h.01M9.5 15a3.5 3.5 0 0 0 5 0',
   scan: 'M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M9 10h.01M15 10h.01M9.5 15a3.5 3.5 0 0 0 5 0',
   chevR: 'M9 18l6-6-6-6',
@@ -136,6 +137,8 @@ const BADGE = {
   FLEXI: ['Flexi', 'bg-indigo-50 text-indigo-700 ring-indigo-600/20'],
   TETAP: ['Tetap / Syif', 'bg-slate-50 text-slate-600 ring-slate-500/20'],
   AKTIF: ['Aktif', 'bg-emerald-50 text-emerald-700 ring-emerald-600/20'],
+  DIBUKA: ['Dibuka', 'bg-emerald-50 text-emerald-700 ring-emerald-600/20'],
+  DITUTUP: ['Ditutup', 'bg-slate-100 text-slate-600 ring-slate-500/20'],
   TIDAK_AKTIF: ['Tidak aktif', 'bg-slate-100 text-slate-600 ring-slate-500/20'],
   SIGNED: ['Ditandatangani', 'bg-emerald-50 text-emerald-700 ring-emerald-600/20'],
   VALID: ['Sah', 'bg-emerald-50 text-emerald-700 ring-emerald-600/20'],
@@ -552,6 +555,7 @@ const NAV = [
   { id: 'mine', label: 'Rekod Kehadiran', icon: 'calendar' },
   { id: 'face', label: 'Wajah Saya', icon: 'face' },
   { id: 'attendance', label: 'Kehadiran', icon: 'clock', admin: true },
+  { id: 'meetings', label: 'Mesyuarat', icon: 'meet', admin: true },
   { id: 'faces', label: 'Wajah & Kiosk', icon: 'scan', admin: true },
   { id: 'users', label: 'Pengguna', icon: 'users', admin: true },
   { id: 'docs', label: 'Dokumen', icon: 'doc', admin: true },
@@ -571,11 +575,11 @@ function navHtml() {
   const item = n => `<a href="#/${n.id}" class="group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${r === n.id ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}">
       <span class="${r === n.id ? 'text-indigo-600' : 'text-slate-400 group-hover:text-slate-500'}">${ico(n.icon)}</span>${n.label}</a>`;
   const admin = NAV.filter(n => n.admin);
-  return `<nav class="flex flex-1 flex-col gap-1">
+  return `<nav class="-mx-2 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 pb-2">
       ${NAV.filter(n => !n.admin).map(item).join('')}
       ${isAdmin() ? `<p class="mt-6 px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-slate-400">Pentadbiran</p>${admin.map(item).join('')}` : ''}
     </nav>
-    <div class="mt-6 flex items-center gap-3 border-t border-slate-100 pt-4">
+    <div class="mt-2 flex shrink-0 items-center gap-3 border-t border-slate-100 pt-4">
       ${avatar(S.me.name)}
       <div class="min-w-0 flex-1"><p class="truncate text-sm font-medium text-slate-900">${esc(S.me.name)}</p>
         <p class="truncate text-xs text-slate-500">${esc(S.me.id)} · ${isAdmin() ? 'Admin' : 'Staf'}</p></div>
@@ -587,12 +591,12 @@ const brand = `<div class="flex items-center gap-2.5"><div class="flex h-8 w-8 i
 function renderShell() {
   root.innerHTML = `
     <aside class="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-slate-200 bg-white px-4 py-5 lg:flex">
-      <div class="mb-8 px-2">${brand}</div><div id="navDesk" class="flex flex-1 flex-col"></div></aside>
+      <div class="mb-8 shrink-0 px-2">${brand}</div><div id="navDesk" class="flex min-h-0 flex-1 flex-col"></div></aside>
     <div id="drawer" class="fixed inset-0 z-40 hidden lg:hidden">
       <div data-dclose class="absolute inset-0 bg-slate-900/40"></div>
       <aside class="relative flex h-full w-72 max-w-[85%] flex-col bg-white px-4 py-5 shadow-xl">
-        <div class="mb-8 flex items-center justify-between px-2">${brand}<button data-dclose class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">${ico('x')}</button></div>
-        <div id="navMob" class="flex flex-1 flex-col"></div></aside></div>
+        <div class="mb-8 flex shrink-0 items-center justify-between px-2">${brand}<button data-dclose class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">${ico('x')}</button></div>
+        <div id="navMob" class="flex min-h-0 flex-1 flex-col"></div></aside></div>
     <div class="lg:pl-64">
       <header class="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-slate-200 bg-white/90 px-4 backdrop-blur lg:hidden">
         <button data-dopen class="-ml-1 rounded-lg p-2 text-slate-600 hover:bg-slate-100">${ico('menu')}</button>${brand}</header>
@@ -635,7 +639,7 @@ const selectBox = (id, opts) => `<select id="${id}" class="${C.input} sm:w-44">$
 
 async function renderPage() {
   closeMenu();
-    const route = currentRoute();
+  const route = currentRoute();
   if (route !== S.lastRoute) modalStack.slice().forEach(m => m.close(true));   // tutup tetingkap hanya bila tukar halaman
   S.lastRoute = route;
   paintNav();
@@ -1430,7 +1434,7 @@ PAGES.face = async view => {
     ${st.pendingConsent ? `<div class="mb-6 rounded-2xl bg-amber-50 p-5 ring-1 ring-amber-600/20">
       <div class="flex gap-3">${ico('alert', 'h-5 w-5 shrink-0 text-amber-600')}<div class="flex-1">
         <p class="font-medium text-amber-900">Persetujuan diperlukan</p>
-        <p class="mt-1 text-sm text-amber-800">Admin telah menyediakan templat wajah anda daripada gambar pasport untuk kehadiran kiosk. Templat ini <b>tidak akan digunakan</b> sehingga anda bersetuju.</p>
+        <p class="mt-1 text-sm text-amber-800">Admin telah menyediakan templat wajah anda (daripada gambar pasport atau tangkapan mesyuarat) untuk kehadiran kiosk. Templat ini <b>tidak akan digunakan</b> sehingga anda bersetuju.</p>
         <div class="mt-3 flex flex-wrap gap-2">${btn('primary', 'Saya bersetuju', 'id="cAccept"')}${btn('secondary', 'Tolak & padam', 'id="cReject"')}</div></div></div></div>` : ''}
     <div class="grid gap-6 lg:grid-cols-5">
       <section class="${C.card} p-5 sm:p-6 lg:col-span-3">
@@ -1490,7 +1494,7 @@ function enrollFace() {
         if (!faces.length) msg('Wajah tidak dikesan');
         else if (faces.length > 1) msg('Hanya seorang di hadapan kamera');
         else if (faces[0].box[2] < vw * 0.2) msg('Dekatkan wajah ke kamera');
-        else if (Math.abs((faces[0].rotation && faces[0].rotation.angle.yaw) || 0) > 0.35) msg('Pandang terus ke kamera');
+        else if (Math.abs((faces[0].rotation && faces[0].rotation.angle.yaw) || 0) > 0.35 || Math.abs((faces[0].rotation && faces[0].rotation.angle.pitch) || 0) > 0.35) msg('Pandang terus ke kamera');
         else if (Date.now() - lastAt > 700) {
           samples.push({ d: encDesc(faces[0].embedding), q: Math.round(((faces[0].real || 0) + (faces[0].live || 0)) * 50) });
           lastAt = Date.now();
@@ -1660,10 +1664,167 @@ function passportImport(faces) {
   });
 }
 
+/* ═══════════ HALAMAN: Mesyuarat (kehadiran mesyuarat dalaman) ═══════════ */
+const meetWhen = m => [m.date ? new Date(m.date + 'T00:00:00').toLocaleDateString('ms-MY', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : '', m.start && (m.start + (m.end ? '–' + m.end : '')), m.location].filter(Boolean).join(' · ');
+
+PAGES.meetings = async view => {
+  const id = decodeURIComponent(location.hash.split('/')[2] || '');
+  return id ? meetingDetail(view, id) : meetingList(view);
+};
+
+async function meetingList(view) {
+  const list = await authed('adminMeetings');
+  if (!view.set(`${pageHead('Mesyuarat', 'Kehadiran mesyuarat dalaman melalui pengecaman wajah', btn('primary', ico('plus') + 'Mesyuarat baharu', 'id="addMeet"'))}
+    ${list.length ? `<div class="${C.card} divide-y divide-slate-100">${list.map(m => `
+      <a href="#/meetings/${encodeURIComponent(m.id)}" class="flex items-center gap-4 p-5 hover:bg-slate-50/70">
+        <span class="flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-xl bg-indigo-50 text-indigo-700">
+          <span class="text-[10px] font-semibold uppercase leading-none">${esc(new Date(m.date + 'T00:00:00').toLocaleDateString('ms-MY', { month: 'short' }))}</span>
+          <span class="text-base font-bold leading-tight">${esc(m.date.slice(8))}</span></span>
+        <div class="min-w-0 flex-1"><p class="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-900">${esc(m.title)} ${badge(m.status)}</p>
+          <p class="truncate text-xs text-slate-500">${esc(meetWhen(m))}</p></div>
+        <div class="flex shrink-0 items-center gap-3 text-right">
+          ${m.pending ? `<span class="hidden sm:inline">${badge('MENUNGGU', m.pending + ' tangkapan')}</span>` : ''}
+          <div><p class="text-lg font-semibold tabular-nums text-slate-900">${m.present}</p><p class="text-xs text-slate-400">hadir</p></div>${ico('chevR', 'h-4 w-4 text-slate-300')}</div></a>`).join('')}</div>`
+      : `<div class="${C.card}">${emptyState('meet', 'Belum ada mesyuarat', 'Cipta mesyuarat, kemudian buka mod kiosk pada laptop di bilik mesyuarat.')}</div>`}`)) return;
+  $('#addMeet').onclick = () => meetForm(null);
+}
+
+function meetForm(m) {
+  const isNew = !m; m = m || { title: '', date: todayKL(), start: '09:00', end: '', location: '', status: 'DIBUKA' };
+  const md = openModal(`${modalHead(isNew ? 'Mesyuarat baharu' : 'Edit mesyuarat', isNew ? 'Kehadiran direkod melalui kiosk wajah' : m.id)}
+    <form id="mf" class="space-y-4 px-6 py-5">
+      <div><label class="${C.label}">Tajuk mesyuarat</label><input name="title" class="${C.input}" required value="${esc(m.title)}" placeholder="cth. Mesyuarat Pengurusan Bil. 11/2026"></div>
+      <div class="grid grid-cols-3 gap-3">
+        <div><label class="${C.label}">Tarikh</label><input name="date" type="date" class="${C.input}" required value="${esc(m.date)}"></div>
+        <div><label class="${C.label}">Mula</label><input name="start" type="time" class="${C.input}" value="${esc(m.start)}"></div>
+        <div><label class="${C.label}">Tamat</label><input name="end" type="time" class="${C.input}" value="${esc(m.end)}"></div></div>
+      <div><label class="${C.label}">Lokasi</label><input name="location" class="${C.input}" value="${esc(m.location)}" placeholder="cth. Bilik Mesyuarat Utama, Aras 3"></div>
+      ${isNew ? '' : `<div><label class="${C.label}">Status</label><select name="status" class="${C.input}"><option value="DIBUKA">Dibuka — kiosk boleh merekod</option><option value="DITUTUP" ${m.status === 'DITUTUP' ? 'selected' : ''}>Ditutup</option></select></div>`}
+      <div id="mfErr" class="hidden rounded-lg bg-rose-50 px-3 py-2.5 text-sm text-rose-700"></div></form>
+    ${modalFoot(btn('secondary', 'Batal', 'data-close') + `<button type="submit" form="mf" class="${C.btn} ${C.primary}">${isNew ? 'Cipta mesyuarat' : 'Simpan'}</button>`)}`);
+  md.q('#mf').onsubmit = e => { e.preventDefault(); const d = new FormData(e.target);
+    busy(md.q('[form=mf]'), async () => {
+      try { const r = await authed('adminMeetingSave', { isNew, meeting: { id: m.id, title: d.get('title'), date: d.get('date'), start: d.get('start'), end: d.get('end'), location: d.get('location'), status: d.get('status') || 'DIBUKA' } });
+        md.close(); toast(isNew ? 'Mesyuarat dicipta' : 'Mesyuarat dikemas kini');
+        if (isNew) location.hash = '#/meetings/' + encodeURIComponent(r.id); else renderPage();
+      } catch (err) { formError(md, 'mfErr', err); }
+    }); };
+}
+
+async function meetingDetail(view, id) {
+  const [d, users] = await Promise.all([authed('adminMeeting', { id }), S.users ? Promise.resolve(S.users) : authed('adminUsers')]);
+  S.users = users;
+  const m = d.meeting, METHOD = { WAJAH: 'Wajah', TANGKAPAN: 'Tangkapan', MANUAL: 'Manual' };
+  if (!view.set(`<a href="#/meetings" class="mb-4 inline-flex items-center gap-1 text-sm font-medium text-slate-500 hover:text-slate-700">${ico('chevL', 'h-4 w-4')}Semua mesyuarat</a>
+    ${pageHead(esc(m.title) + ' ' + badge(m.status), esc(meetWhen(m)),
+      btn('secondary', ico('edit', 'h-4 w-4'), 'id="mEdit" title="Edit"') + btn('secondary', ico('download', 'h-4 w-4') + 'CSV', 'id="mCsv"') +
+      btn('primary', ico('scan') + 'Mod kiosk mesyuarat', `id="mKiosk" ${m.status === 'DITUTUP' ? 'disabled' : ''}`))}
+    <div class="grid grid-cols-1 gap-6 lg:grid-cols-5">
+      <section class="${C.card} min-w-0 lg:col-span-3">
+        <div class="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4 sm:px-6">
+          <div><h2 class="text-base font-semibold text-slate-900">Kehadiran</h2><p class="mt-0.5 text-sm text-slate-500">${d.attendees.length} pegawai hadir</p></div>
+          ${btn('secondary', ico('plus', 'h-4 w-4') + 'Tambah manual', 'id="mManual"')}</div>
+        ${d.attendees.length ? `<ul class="divide-y divide-slate-100">${d.attendees.map(a => `<li class="flex items-center gap-3 px-5 py-3 sm:px-6">
+          ${avatar(a.name, 'h-9 w-9 text-xs')}<div class="min-w-0 flex-1"><p class="truncate text-sm font-medium text-slate-900">${esc(a.name)}</p>
+          <p class="truncate text-xs text-slate-500">${esc(a.staffId)}${a.dept ? ' · ' + esc(a.dept) : ''}</p></div>
+          ${badge(a.method === 'WAJAH' ? 'HADIR' : a.method === 'TANGKAPAN' ? 'LUAR' : 'STAFF', METHOD[a.method] || a.method)}
+          <span class="w-12 text-right text-sm tabular-nums text-slate-600">${esc(a.time.slice(11, 16))}</span></li>`).join('')}</ul>`
+          : emptyState('users', 'Belum ada kehadiran', 'Buka mod kiosk mesyuarat untuk mula merekod.')}
+      </section>
+      <section class="${C.card} min-w-0 lg:col-span-2">
+        <div class="border-b border-slate-100 px-5 py-4 sm:px-6"><h2 class="text-base font-semibold text-slate-900">Wajah tidak dikenali</h2>
+          <p class="mt-0.5 text-sm text-slate-500">${d.captures.length ? d.captures.length + ' menunggu tindakan' : 'Tiada tangkapan menunggu'} · dipadam automatik selepas ${d.retentionDays} hari</p></div>
+        ${d.captures.length ? `<div class="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3">${d.captures.map(c => `
+          <div class="overflow-hidden rounded-xl ring-1 ring-slate-200">
+            <img src="data:image/jpeg;base64,${c.photo}" alt="Wajah tidak dikenali" class="aspect-square w-full bg-slate-100 object-cover">
+            <div class="space-y-1.5 p-2"><p class="text-center text-xs tabular-nums text-slate-500">${esc(c.time.slice(11, 16))}</p>
+              <button data-link="${esc(c.id)}" class="w-full rounded-lg bg-indigo-600 px-2 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500">Padankan</button>
+              <div class="flex gap-1.5"><button data-new="${esc(c.id)}" class="flex-1 rounded-lg bg-white px-2 py-1.5 text-xs font-medium text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50">Baharu</button>
+                <button data-del="${esc(c.id)}" class="rounded-lg px-2 py-1.5 text-slate-400 ring-1 ring-slate-200 hover:bg-rose-50 hover:text-rose-600" title="Buang">${ico('trash', 'h-3.5 w-3.5')}</button></div></div></div>`).join('')}</div>`
+          : emptyState('face', 'Semua tangkapan telah diproses')}
+      </section></div>`)) return;
+
+  $('#mEdit').onclick = () => meetForm(m);
+  $('#mKiosk').onclick = () => { K.meeting = m; renderKiosk(); };
+  $('#mManual').onclick = () => pickStaffModal({ title: 'Tambah kehadiran manual', sub: m.title, exclude: d.attendees.map(a => a.staffId), confirm: 'Tandakan hadir',
+    onPick: async st => { await authed('adminMeetingAddManual', { id: m.id, staffId: st.id }); toast(st.name + ' ditanda hadir'); renderPage(); } });
+  $('#mCsv').onclick = () => downloadCsv(`kehadiran_${m.id}.csv`, [['Mesyuarat', 'Tarikh', 'StaffID', 'Nama', 'Bahagian', 'Masa', 'Kaedah'],
+    ...d.attendees.map(a => [m.title, m.date, a.staffId, a.name, a.dept, a.time, METHOD[a.method] || a.method])]);
+  const capOf = cid => d.captures.find(c => c.id === cid);
+  $$('[data-link]').forEach(b => b.onclick = () => { const c = capOf(b.dataset.link);
+    pickStaffModal({ title: 'Padankan dengan pegawai', sub: 'Pilih pegawai dalam gambar ini', photo: c.photo, exclude: [], confirm: 'Padankan & tanda hadir', template: true,
+      onPick: async (st, opt) => { const r = await authed('adminCaptureResolve', { captureId: c.id, op: 'LINK', staffId: st.id, saveTemplate: opt.saveTemplate, attested: opt.attested });
+        toast(r.alreadyPresent ? st.name + ' sudah hadir — tangkapan diproses' : st.name + ' ditanda hadir'); renderPage(); } }); });
+  $$('[data-new]').forEach(b => b.onclick = () => newStaffFromCapture(capOf(b.dataset.new)));
+  $$('[data-del]').forEach(b => b.onclick = async () => {
+    if (!(await confirmDialog({ title: 'Buang tangkapan?', message: 'Gambar akan dipadam dan tiada kehadiran direkod.', confirmText: 'Buang', danger: true }))) return;
+    try { await authed('adminCaptureResolve', { captureId: b.dataset.del, op: 'DISCARD' }); toast('Tangkapan dibuang'); renderPage(); } catch (e) { toast(e.message, 'err'); }
+  });
+}
+
+const templateOpts = () => `<div class="space-y-2 rounded-lg bg-slate-50 p-3">
+  <label class="flex items-start gap-3"><input name="saveTemplate" type="checkbox" checked class="mt-0.5 h-4 w-4 rounded border-slate-300 accent-indigo-600">
+    <span class="text-sm text-slate-700">Simpan wajah ini sebagai templat pegawai, supaya dikenali secara automatik pada mesyuarat akan datang</span></label>
+  <label class="flex items-start gap-3 pl-7"><input name="attested" type="checkbox" class="mt-0.5 h-4 w-4 rounded border-slate-300 accent-indigo-600">
+    <span class="text-xs text-slate-500">Persetujuan bertulis pegawai telah diperoleh. Jika tidak ditanda, pegawai perlu bersetuju di halaman <b>Wajah Saya</b> sebelum templat digunakan.</span></label></div>`;
+
+/** Tetingkap pilih pegawai (carian). onPick(staff, {saveTemplate, attested}) */
+function pickStaffModal({ title, sub, photo, exclude, confirm, template, onPick }) {
+  const list = (S.users || []).filter(u => u.status !== 'DISABLED' && !exclude.includes(u.id));
+  let chosen = null;
+  const m = openModal(`${modalHead(title, sub)}
+    <form id="pk" class="space-y-4 px-6 py-5">
+      ${photo ? `<img src="data:image/jpeg;base64,${photo}" class="mx-auto h-36 w-36 rounded-2xl object-cover ring-1 ring-slate-200" alt="">` : ''}
+      <div>${searchBox('pkq', 'Cari nama, Staff ID atau emel…')}</div>
+      <div id="pkList" class="max-h-56 divide-y divide-slate-100 overflow-y-auto rounded-lg ring-1 ring-slate-200"></div>
+      ${template ? templateOpts() : ''}
+      <div id="pkErr" class="hidden rounded-lg bg-rose-50 px-3 py-2.5 text-sm text-rose-700"></div></form>
+    ${modalFoot(btn('secondary', 'Batal', 'data-close') + `<button type="submit" form="pk" class="${C.btn} ${C.primary}" disabled>${esc(confirm)}</button>`)}`);
+  const draw = () => {
+    const q = m.q('#pkq').value.toLowerCase();
+    const rows = list.filter(u => !q || [u.id, u.name, u.email, u.dept].join(' ').toLowerCase().includes(q)).slice(0, 50);
+    m.q('#pkList').innerHTML = rows.length ? rows.map(u => `<label class="flex cursor-pointer items-center gap-3 px-3 py-2.5 hover:bg-slate-50 has-[:checked]:bg-indigo-50">
+      <input type="radio" name="who" value="${esc(u.id)}" class="accent-indigo-600" ${chosen === u.id ? 'checked' : ''}>${avatar(u.name, 'h-8 w-8 text-[11px]')}
+      <span class="min-w-0"><span class="block truncate text-sm font-medium text-slate-900">${esc(u.name)}</span><span class="block truncate text-xs text-slate-500">${esc(u.id)} · ${esc(u.email)}</span></span></label>`).join('')
+      : '<p class="p-4 text-center text-sm text-slate-500">Tiada padanan. Gunakan "Baharu" untuk mendaftar pegawai baharu.</p>';
+    $$('input[name=who]', m.el).forEach(r => r.onchange = () => { chosen = r.value; m.q('[form=pk]').disabled = false; });
+  };
+  m.q('#pkq').oninput = draw; draw();
+  m.q('#pk').onsubmit = e => { e.preventDefault(); const f = new FormData(e.target); const st = list.find(u => u.id === chosen); if (!st) return;
+    busy(m.q('[form=pk]'), async () => {
+      try { await onPick(st, { saveTemplate: f.get('saveTemplate') === 'on', attested: f.get('attested') === 'on' }); m.close(); }
+      catch (err) { formError(m, 'pkErr', err); }
+    }); };
+}
+
+function newStaffFromCapture(c) {
+  const m = openModal(`${modalHead('Daftar pegawai baharu', 'Staff ID dijana automatik')}
+    <form id="ns" class="space-y-4 px-6 py-5">
+      <img src="data:image/jpeg;base64,${c.photo}" class="mx-auto h-36 w-36 rounded-2xl object-cover ring-1 ring-slate-200" alt="">
+      <div><label class="${C.label}">Nama penuh</label><input name="name" class="${C.input}" required></div>
+      <div class="grid gap-3 sm:grid-cols-2">
+        <div><label class="${C.label}">Emel rasmi</label><input name="email" type="email" class="${C.input}" required></div>
+        <div><label class="${C.label}">Jabatan / Bahagian</label><input name="dept" class="${C.input}"></div></div>
+      ${templateOpts()}
+      <label class="flex items-start gap-3"><input name="sendLink" type="checkbox" class="mt-0.5 h-4 w-4 rounded border-slate-300 accent-indigo-600">
+        <span class="text-sm text-slate-700">Hantar link pendaftaran Digital ID (cap jari) ke emel pegawai</span></label>
+      <div id="nsErr" class="hidden rounded-lg bg-rose-50 px-3 py-2.5 text-sm text-rose-700"></div></form>
+    ${modalFoot(btn('secondary', 'Batal', 'data-close') + `<button type="submit" form="ns" class="${C.btn} ${C.primary}">Daftar & tanda hadir</button>`)}`);
+  m.q('#ns').onsubmit = e => { e.preventDefault(); const f = new FormData(e.target);
+    busy(m.q('[form=ns]'), async () => {
+      try {
+        const r = await authed('adminCaptureResolve', { captureId: c.id, op: 'NEW', user: { name: f.get('name'), email: f.get('email'), dept: f.get('dept'), role: 'STAFF' },
+          saveTemplate: f.get('saveTemplate') === 'on', attested: f.get('attested') === 'on', sendLink: f.get('sendLink') === 'on' });
+        m.close(); S.users = null; toast(`${r.name} didaftarkan (${r.staffId}) dan ditanda hadir`); renderPage();
+      } catch (err) { formError(m, 'nsErr', err); }
+    }); };
+}
+
 /* ═══════════ MOD KIOSK (skrin penuh, pelbagai wajah) ═══════════ */
 const K = { token: null, running: false, people: [], db: [], cfg: {}, hits: {}, sent: {}, recent: [], human: null, mirror: true, refreshAt: 0, info: null };
 
 function renderKiosk() {
+  K.running = false; K.hits = {}; K.sent = {}; K.recent = []; K.unk = []; K.capCount = 0;
   document.body.className = 'h-full bg-slate-950 font-sans text-white antialiased';
   root.innerHTML = `<div class="fixed inset-0 flex flex-col lg:flex-row">
     <div class="relative min-h-0 flex-1 overflow-hidden bg-black">
@@ -1674,20 +1835,26 @@ function renderKiosk() {
         <span id="kStatus" class="rounded-full bg-black/60 px-3 py-1.5 text-sm backdrop-blur">Memulakan…</span></div>
       <div class="absolute right-4 top-4 flex gap-2">
         <button id="kFull" class="rounded-xl bg-black/50 p-2.5 backdrop-blur hover:bg-black/70" title="Skrin penuh">${ico('scan', 'h-5 w-5')}</button>
-        <button id="kSet" class="rounded-xl bg-black/50 p-2.5 backdrop-blur hover:bg-black/70" title="Tetapan">${ico('cog', 'h-5 w-5')}</button></div>
+        <button id="kSet" class="rounded-xl bg-black/50 p-2.5 backdrop-blur hover:bg-black/70" title="Tetapan">${ico('cog', 'h-5 w-5')}</button>
+        ${K.meeting ? `<button id="kExit" class="rounded-xl bg-rose-600/90 px-3 py-2.5 text-sm font-semibold backdrop-blur hover:bg-rose-600">Tamat</button>` : ''}</div>
+      ${K.meeting ? `<div class="absolute inset-x-4 bottom-4 mx-auto max-w-2xl rounded-xl bg-black/55 px-4 py-2 text-center text-xs text-slate-200 backdrop-blur">
+        Kehadiran mesyuarat direkod melalui pengecaman wajah. Wajah yang tidak dikenali ditangkap untuk didaftarkan oleh urus setia.</div>` : ''}
       <div id="kToast" class="pointer-events-none absolute inset-x-0 bottom-8 flex justify-center"></div>
     </div>
     <aside class="flex w-full shrink-0 flex-col border-t border-white/10 bg-slate-900 p-5 lg:w-96 lg:border-l lg:border-t-0 lg:p-8">
       <p id="kClock" class="text-5xl font-semibold tabular-nums tracking-tight lg:text-6xl">--:--</p>
       <p id="kDate" class="mt-1 text-slate-400"></p>
       <p id="kName" class="mt-4 flex items-center gap-2 text-sm text-slate-300">${ico('pin', 'h-4 w-4')}<span>—</span></p>
-      <p class="mt-8 text-xs font-semibold uppercase tracking-wider text-slate-500">Rekod terkini</p>
+      ${K.meeting ? `<div class="mt-6 grid grid-cols-2 gap-3"><div class="rounded-xl bg-white/5 p-3"><p class="text-xs text-slate-400">Hadir</p><p id="kPresent" class="text-2xl font-semibold tabular-nums">0</p></div>
+        <div class="rounded-xl bg-white/5 p-3"><p class="text-xs text-slate-400">Ditangkap</p><p id="kCaps" class="text-2xl font-semibold tabular-nums">0</p></div></div>` : ''}
+      <p class="mt-8 text-xs font-semibold uppercase tracking-wider text-slate-500">${K.meeting ? 'Kehadiran' : 'Rekod terkini'}</p>
       <ul id="kRecent" class="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto"><li class="text-sm text-slate-500">Belum ada rekod.</li></ul>
       <p id="kFoot" class="mt-4 text-xs text-slate-500"></p></aside></div>`;
-  const tick = () => { const d = new Date();
+  const tick = () => { if (!$('#kClock')) return clearInterval(K.clockT); const d = new Date();
     $('#kClock').textContent = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kuala_Lumpur' });
     $('#kDate').textContent = d.toLocaleDateString('ms-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kuala_Lumpur' }); };
-  tick(); setInterval(tick, 1000);
+  tick(); clearInterval(K.clockT); K.clockT = setInterval(tick, 1000);
+  if ($('#kExit')) $('#kExit').onclick = exitKiosk;
   $('#kFull').onclick = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {});
   $('#kSet').onclick = kioskSettings;
   startKiosk();
@@ -1695,12 +1862,24 @@ function renderKiosk() {
 
 const kStatus = t => { const el = $('#kStatus'); if (el) el.textContent = t; };
 
+function exitKiosk() {
+  K.running = false; stopCamera($('#kv'));
+  const id = K.meeting && K.meeting.id; K.meeting = null;
+  document.body.className = 'h-full bg-slate-50 font-sans text-slate-800 antialiased';
+  renderShell(); if (id) location.hash = '#/meetings/' + encodeURIComponent(id);
+}
+
 async function kioskRefresh() {
-  const d = await api('kioskInit', { kioskToken: K.token });
+  const d = K.meeting ? await authed('meetKioskInit', { id: K.meeting.id }) : await api('kioskInit', { kioskToken: K.token });
+  if (K.meeting && d.present && !K.recent.length) {
+    d.present.forEach(p => { K.sent[p.staffId] = { t: Date.now(), label: 'Hadir ' + p.time }; });
+    K.recent = d.present.slice().reverse().map(p => ({ name: p.name, act: 'Hadir', time: p.time, extra: 'Sudah direkod', warn: false }));
+    drawRecent();
+  }
   K.info = d.kiosk; K.cfg = d.cfg; K.people = d.people; K.refreshAt = Date.now();
   K.db = []; d.people.forEach(p => p.descs.forEach(s => K.db.push({ staffId: p.staffId, name: p.name, desc: decDesc(s) })));
   $('#kName span').textContent = d.kiosk.name + (d.kiosk.location ? ' · ' + d.kiosk.location : '');
-  $('#kFoot').textContent = `${d.people.length} staf berdaftar wajah · dikemas kini ${d.now.slice(11, 16)}`;
+  $('#kFoot').textContent = `${d.people.length} pegawai berdaftar wajah · dikemas kini ${d.now.slice(11, 16)}`;
 }
 
 async function startKiosk() {
@@ -1711,7 +1890,7 @@ async function startKiosk() {
     K.mirror = store.get('kioskMirror') !== '0';
     $('#kv').style.transform = K.mirror ? 'scaleX(-1)' : '';
     try { if (navigator.wakeLock) await navigator.wakeLock.request('screen'); } catch (e) {}
-    K.running = true; kStatus('Sedia — sila hadap kamera'); kioskLoop();
+    K.running = true; kStatus('Sedia — sila hadap kamera'); K.gen = (K.gen || 0) + 1; kioskLoop(K.gen);
   } catch (e) {
     kStatus('Ralat');
     $('#kToast').innerHTML = `<div class="pointer-events-auto max-w-md rounded-2xl bg-rose-600 px-6 py-4 text-center shadow-xl"><p class="font-semibold">Kiosk tidak dapat dimulakan</p><p class="mt-1 text-sm text-rose-100">${esc(e.message)}</p>
@@ -1731,8 +1910,8 @@ function matchFace(emb) {
   return { staffId: best.r.staffId, name: best.r.name, score: best.s };
 }
 
-async function kioskLoop() {
-  if (!K.running) return;
+async function kioskLoop(gen) {
+  if (!K.running || gen !== K.gen) return;   // hanya satu gelung aktif
   const video = $('#kv'), cv = $('#kc');
   if (!video) { K.running = false; return; }
   if (Date.now() - K.refreshAt > 10 * 60000) kioskRefresh().catch(() => {});
@@ -1751,11 +1930,16 @@ async function kioskLoop() {
       if (K.mirror) x = W - x - w;
       let label = 'Tidak dikenali', color = '#94a3b8';
       const spoof = K.cfg.antispoofMin > 0 && Math.min(f.real || 0, f.live || 0) < K.cfg.antispoofMin;
+      // Hanya wajah yang menghadap kamera (sudut dalam radian daripada Human)
+      const ang = f.rotation && f.rotation.angle, maxRad = (K.cfg.maxAngle || 20) * Math.PI / 180;
+      const turned = ang && (Math.abs(ang.yaw) > maxRad || Math.abs(ang.pitch) > maxRad);
       if (w < 70) { label = 'Sila dekat'; }
       else if (edge) { label = 'Ke tengah sedikit'; }
+      else if (turned) { label = 'Pandang ke kamera'; color = '#f59e0b'; }
       else if (spoof) { label = 'Hadap kamera secara langsung'; color = '#f59e0b'; }
       else {
         const mt = matchFace(f.embedding);
+        if (!mt && K.meeting && K.cfg.capture) { label = trackUnknown(f, video, now); color = label === 'Tidak dikenali' ? '#94a3b8' : '#a78bfa'; }
         if (mt) {
           // Sah selepas 2 bingkai berturut-turut (tetingkap ikut kelajuan peranti)
           const win = Math.max(5000, (K.frameMs || 0) * 2.5);
@@ -1775,32 +1959,67 @@ async function kioskLoop() {
       g.fillStyle = '#fff'; g.fillText(label, lx + 10, ly + th * 0.68);
     }
   } catch (e) { /* teruskan gelung */ }
-  setTimeout(kioskLoop, 40);
+  setTimeout(() => kioskLoop(gen), 40);
 }
 
 const STATUS_TXT = { LEWAT: 'Lewat', PULANG_AWAL: 'Pulang awal', HADIR: 'Hadir', BEKERJA: 'Selamat bekerja' };
 async function kioskSend(mt, emb) {
   K.sent[mt.staffId] = { t: Date.now(), label: '…' };
   try {
-    const r = await api('kioskPunch', { kioskToken: K.token, staffId: mt.staffId, descriptor: encDesc(emb) });
+    const r = K.meeting ? await authed('meetCheckin', { id: K.meeting.id, staffId: mt.staffId, descriptor: encDesc(emb) })
+      : await api('kioskPunch', { kioskToken: K.token, staffId: mt.staffId, descriptor: encDesc(emb) });
     if (r.action === 'REJECT') { delete K.sent[mt.staffId]; return; }
     if (r.action === 'SKIP') { K.sent[mt.staffId].label = r.reason; return; }
-    const act = r.action === 'IN' ? 'Masuk' : 'Keluar';
+    const act = K.meeting ? 'Hadir' : r.action === 'IN' ? 'Masuk' : 'Keluar';
     K.sent[mt.staffId].label = act + ' ' + r.time;
-    const extra = r.action === 'IN' ? (r.late ? `Lewat ${fmtMin(r.late)}` : 'Selamat bekerja') : (r.early ? `Pulang awal ${fmtMin(r.early)}` : 'Terima kasih');
+    const extra = K.meeting ? 'Selamat datang' : r.action === 'IN' ? (r.late ? `Lewat ${fmtMin(r.late)}` : 'Selamat bekerja') : (r.early ? `Pulang awal ${fmtMin(r.early)}` : 'Terima kasih');
     K.recent.unshift({ name: r.name, act, time: r.time, extra, warn: !!(r.late || r.early) });
-    K.recent = K.recent.slice(0, 12);
-    $('#kRecent').innerHTML = K.recent.map(x => `<li class="flex items-center gap-3 rounded-xl bg-white/5 px-3 py-2.5">
-      <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-500/20 text-xs font-semibold text-indigo-200">${esc(initials(x.name))}</span>
-      <div class="min-w-0 flex-1"><p class="truncate text-sm font-medium">${esc(x.name)}</p><p class="text-xs ${x.warn ? 'text-amber-300' : 'text-slate-400'}">${esc(x.extra)}</p></div>
-      <div class="text-right"><p class="text-xs font-semibold ${x.act === 'Masuk' ? 'text-emerald-300' : 'text-sky-300'}">${x.act}</p><p class="text-sm tabular-nums text-slate-300">${esc(x.time)}</p></div></li>`).join('');
+    K.recent = K.recent.slice(0, K.meeting ? 200 : 12);
+    drawRecent();
     $('#kToast').innerHTML = `<div class="flex items-center gap-4 rounded-2xl bg-emerald-600 px-6 py-4 shadow-2xl">
       <span class="flex h-12 w-12 items-center justify-center rounded-full bg-white/20">${ico('check', 'h-7 w-7')}</span>
-      <div><p class="text-xl font-semibold">${esc(r.name)}</p><p class="text-emerald-100">Daftar ${act} · ${esc(r.time)} · ${esc(extra)}</p></div></div>`;
+      <div><p class="text-xl font-semibold">${esc(r.name)}</p><p class="text-emerald-100">${K.meeting ? 'Hadir' : 'Daftar ' + act} · ${esc(r.time)} · ${esc(extra)}</p></div></div>`;
     clearTimeout(K.toastT); K.toastT = setTimeout(() => { const t = $('#kToast'); if (t) t.innerHTML = ''; }, 3500);
-    try { const ac = new (window.AudioContext || window.webkitAudioContext)(), o = ac.createOscillator(), gn = ac.createGain();
-      o.frequency.value = r.action === 'IN' ? 880 : 660; gn.gain.value = 0.08; o.connect(gn).connect(ac.destination); o.start(); o.stop(ac.currentTime + 0.15); } catch (e) {}
+    beep(r.action === 'IN' ? 880 : 660);
   } catch (e) { delete K.sent[mt.staffId]; kStatus('Ralat rangkaian — cuba semula'); }
+}
+
+function beep(freq) {
+  try { const ac = new (window.AudioContext || window.webkitAudioContext)(), o = ac.createOscillator(), gn = ac.createGain();
+    o.frequency.value = freq; gn.gain.value = 0.08; o.connect(gn).connect(ac.destination); o.start(); o.stop(ac.currentTime + 0.15); } catch (e) {}
+}
+
+function drawRecent() {
+  const el = $('#kRecent'); if (!el) return;
+  if ($('#kPresent')) $('#kPresent').textContent = K.recent.length;
+  el.innerHTML = K.recent.length ? K.recent.map(x => `<li class="flex items-center gap-3 rounded-xl bg-white/5 px-3 py-2.5">
+      <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-500/20 text-xs font-semibold text-indigo-200">${esc(initials(x.name))}</span>
+      <div class="min-w-0 flex-1"><p class="truncate text-sm font-medium">${esc(x.name)}</p><p class="text-xs ${x.warn ? 'text-amber-300' : 'text-slate-400'}">${esc(x.extra)}</p></div>
+      <div class="text-right"><p class="text-xs font-semibold ${x.act === 'Keluar' ? 'text-sky-300' : 'text-emerald-300'}">${x.act}</p><p class="text-sm tabular-nums text-slate-300">${esc(x.time)}</p></div></li>`).join('')
+    : '<li class="text-sm text-slate-500">Belum ada rekod.</li>';
+}
+
+/** Mod mesyuarat: jejak wajah tidak dikenali & tangkap sekali bagi setiap orang */
+function trackUnknown(f, video, now) {
+  K.unk = (K.unk || []).filter(u => now - u.t < 15 * 60000);
+  let u = K.unk.find(x => K.human.match.similarity(f.embedding, x.emb, MATCH_OPTS) >= K.cfg.threshold);
+  const win = Math.max(5000, (K.frameMs || 0) * 2.5);
+  if (!u) { u = { emb: f.embedding, n: 0, t: now, state: '' }; K.unk.push(u); }
+  u.n = now - u.t < win ? u.n + 1 : 1; u.t = now;
+  if (u.n >= 3 && !u.state) { u.state = 'sending'; captureUnknown(u, f, video); }
+  return u.state === 'done' ? 'Ditangkap untuk pendaftaran' : u.state === 'sending' ? 'Menangkap…' : 'Tidak dikenali';
+}
+
+async function captureUnknown(u, f, video) {
+  try {
+    const [x, y, w, h] = f.box, side = Math.max(w, h) * 0.85, cx = x + w / 2, cy = y + h / 2, S2 = 200;   // potong rapat pada wajah
+    const cv = document.createElement('canvas'); cv.width = S2; cv.height = S2;
+    cv.getContext('2d').drawImage(video, cx - side / 2, cy - side / 2, side, side, 0, 0, S2, S2);
+    const photo = cv.toDataURL('image/jpeg', 0.8).split(',')[1];
+    const r = await authed('meetCapture', { id: K.meeting.id, photo, descriptor: encDesc(f.embedding) });
+    u.state = 'done';
+    if (r.action === 'CAPTURED') { K.capCount = (K.capCount || 0) + 1; if ($('#kCaps')) $('#kCaps').textContent = K.capCount; beep(520); }
+  } catch (e) { u.state = ''; u.n = 0; }
 }
 
 async function kioskSettings() {
@@ -1812,10 +2031,12 @@ async function kioskSettings() {
       <div><label class="${C.label}">Kamera</label><select id="ksCam" class="${C.input}"><option value="">Lalai</option>
         ${cams.map((c, i) => `<option value="${esc(c.deviceId)}" ${c.deviceId === cur ? 'selected' : ''}>${esc(c.label || 'Kamera ' + (i + 1))}</option>`).join('')}</select></div>
       <label class="flex items-center gap-3"><input id="ksMir" type="checkbox" class="h-4 w-4 accent-indigo-600" ${K.mirror ? 'checked' : ''}><span class="text-sm">Paparan cermin (mirror)</span></label>
-      <div class="border-t border-slate-100 pt-4"><button id="ksExit" class="text-sm font-medium text-rose-600 hover:text-rose-500">Keluar mod kiosk pada peranti ini</button></div></div>
+      <div class="border-t border-slate-100 pt-4"><button id="ksExit" class="text-sm font-medium text-rose-600 hover:text-rose-500">${K.meeting ? 'Tamat mod kiosk mesyuarat' : 'Keluar mod kiosk pada peranti ini'}</button></div></div>
     ${modalFoot(btn('secondary', 'Tutup', 'data-close') + btn('primary', 'Simpan', 'id="ksSave"'))}`, { size: 'sm' });
-  m.q('#ksSave').onclick = () => { store.set('kioskCam', m.q('#ksCam').value); store.set('kioskMirror', m.q('#ksMir').checked ? '1' : '0'); location.reload(); };
+  m.q('#ksSave').onclick = () => { store.set('kioskCam', m.q('#ksCam').value); store.set('kioskMirror', m.q('#ksMir').checked ? '1' : '0');
+    if (K.meeting) { m.close(); K.running = false; stopCamera($('#kv')); renderKiosk(); } else location.reload(); };
   m.q('#ksExit').onclick = async () => {
+    if (K.meeting) { m.close(); return exitKiosk(); }
     if (!(await confirmDialog({ title: 'Keluar mod kiosk?', message: 'Peranti ini perlu dibuka semula dengan link aktivasi untuk menjadi kiosk.', confirmText: 'Keluar', danger: true }))) return;
     store.del('kioskToken'); location.href = location.pathname;
   };
